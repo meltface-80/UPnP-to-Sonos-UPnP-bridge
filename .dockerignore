@@ -1,0 +1,13 @@
+.git
+.github
+docs
+tests
+*.md
+!README.md
+.gitignore
+pytest.ini
+requirements-dev.txt
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
