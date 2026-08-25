@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sonos UPnP Bridge for Audirvana</title>
+<meta name="description" content="A small Docker container that makes Sonos speakers appear in Audirvana as ordinary UPnP/DLNA renderers.">
+<meta property="og:title" content="Sonos UPnP Bridge for Audirvana">
+<meta property="og:description" content="Makes Sonos speakers appear in Audirvana as ordinary UPnP/DLNA renderers.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔊</text></svg>">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --ink: #14171c;
+    --muted: #5b6472;
+    --line: #e3e6ec;
+    --accent: #1f6feb;
+    --accent-ink: #ffffff;
+    --code-bg: #10141b;
+    --code-ink: #e6edf3;
+    --code-token: #7ee0a8;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1116;
+      --panel: #161b22;
+      --ink: #e6edf3;
+      --muted: #9aa4b2;
+      --line: #262c36;
+      --accent: #4c8dff;
+      --accent-ink: #06101f;
+      --code-bg: #0a0d12;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 52rem; margin: 0 auto; padding: 0 1.25rem; }
+
+  header {
+    padding: 4.5rem 0 3rem;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(31,111,235,.07), transparent 70%);
+  }
+  .eyebrow {
+    display: inline-block; font-size: .75rem; letter-spacing: .09em;
+    text-transform: uppercase; font-weight: 700; color: var(--accent);
+    border: 1px solid currentColor; border-radius: 999px;
+    padding: .2rem .7rem; margin-bottom: 1.1rem;
+  }
+  h1 { font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.12; margin: 0 0 .75rem; letter-spacing: -.02em; }
+  .lede { font-size: 1.14rem; color: var(--muted); margin: 0 0 1.75rem; max-width: 40rem; }
+  .cta { display: flex; flex-wrap: wrap; gap: .6rem; }
+  .btn {
+    display: inline-block; padding: .55rem 1.05rem; border-radius: 9px;
+    font-weight: 600; font-size: .93rem; text-decoration: none;
+    border: 1px solid var(--line); color: var(--ink); background: var(--panel);
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .btn:hover { filter: brightness(1.06); }
+
+  section { padding: 3rem 0; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: 0; }
+  h2 { font-size: 1.32rem; margin: 0 0 .4rem; letter-spacing: -.01em; }
+  h3 { font-size: 1rem; margin: 1.75rem 0 .4rem; }
+  p { margin: 0 0 1rem; }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+
+  .flow {
+    display: grid; grid-template-columns: 1fr auto 1fr auto 1fr;
+    gap: .6rem; align-items: stretch; margin: 1.75rem 0 .5rem;
+  }
+  .node {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: .95rem .8rem; text-align: center;
+  }
+  .node strong { display: block; font-size: .95rem; }
+  .node span { font-size: .8rem; color: var(--muted); }
+  .node.mid { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(31,111,235,.10); }
+  .arrow { align-self: center; color: var(--muted); font-size: 1.1rem; }
+  @media (max-width: 640px) {
+    .flow { grid-template-columns: 1fr; }
+    .arrow { transform: rotate(90deg); }
+  }
+
+  .codeblock { position: relative; margin: 1.1rem 0; }
+  pre {
+    background: var(--code-bg); color: var(--code-ink); border-radius: var(--radius);
+    border: 1px solid var(--line);
+    padding: 1.1rem 1.1rem; overflow-x: auto; margin: 0;
+    font: 13.5px/1.65 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  pre .f { color: var(--code-token); }
+  pre .c { color: #7d8590; }
+  code:not(pre code) {
+    background: color-mix(in srgb, var(--muted) 16%, transparent);
+    padding: .1rem .38rem; border-radius: 5px; font-size: .88em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .copy {
+    position: absolute; top: .6rem; right: .6rem;
+    background: rgba(255,255,255,.1); color: #e6edf3; border: 1px solid rgba(255,255,255,.18);
+    border-radius: 7px; padding: .28rem .6rem; font-size: .76rem; cursor: pointer;
+    font-family: inherit;
+  }
+  .copy:hover { background: rgba(255,255,255,.18); }
+
+  ol.steps { padding-left: 1.15rem; margin: 1rem 0; }
+  ol.steps li { margin-bottom: .5rem; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .92rem; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  td:first-child { white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+
+  details {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: .7rem .95rem; margin-bottom: .6rem;
+  }
+  summary { cursor: pointer; font-weight: 600; font-size: .95rem; }
+  details p { margin: .7rem 0 .2rem; font-size: .93rem; }
+
+  .callout {
+    background: var(--panel); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0;
+    padding: .85rem 1rem; margin: 1.25rem 0; font-size: .93rem;
+  }
+  footer { padding: 2.5rem 0 3.5rem; color: var(--muted); font-size: .88rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <span class="eyebrow">Docker · UPnP · Sonos</span>
+    <h1>Play to Sonos from Audirvana</h1>
+    <p class="lede">
+      Audirvana streams happily to any standard UPnP/DLNA renderer &mdash; but not to Sonos,
+      whose players advertise themselves as <code>ZonePlayer</code> devices and expect their
+      own dialect of UPnP. This bridge sits on your network and re-presents every Sonos room
+      as an ordinary MediaRenderer, so your rooms simply show up in Audirvana's device list
+      under their own names.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="#install">Install</a>
+      <a class="btn" href="https://github.com/meltface-80/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-">Source on GitHub</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>What it does</h2>
+    <p class="muted">
+      One container, one virtual renderer per Sonos room.
+    </p>
+
+    <div class="flow">
+      <div class="node"><strong>Audirvana</strong><span>on your Mac or PC</span></div>
+      <div class="arrow">→</div>
+      <div class="node mid"><strong>The bridge</strong><span>standard MediaRenderer</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><strong>Sonos</strong><span>Kitchen, Study, …</span></div>
+    </div>
+
+    <p>
+      The bridge finds your players over SSDP, reads the household layout from
+      Sonos&rsquo; own zone topology, and advertises one clean
+      <code>MediaRenderer:1</code> device per visible room &mdash; each carrying the room
+      name you gave it in the Sonos app. Bonded subs, surrounds and BOOST/BRIDGE units are
+      left out, because they are not rooms you play to.
+    </p>
+    <p>
+      When Audirvana starts a track, the bridge rewrites the metadata into the shape Sonos
+      insists on and loads it through the player&rsquo;s queue, so the next track Audirvana
+      hands over plays gaplessly. Transport commands follow the group coordinator, so playing
+      to a grouped room plays to the whole group; volume stays with the individual speaker.
+      Audio never passes through the bridge &mdash; Sonos fetches it straight from
+      Audirvana&rsquo;s own HTTP server.
+    </p>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="muted">
+      Run it on any always-on Linux machine on the same network as your Sonos gear &mdash; a
+      NAS, a Raspberry Pi, a home server.
+    </p>
+
+    <div class="codeblock">
+      <button class="copy" type="button" data-copy>Copy</button>
+<pre><code><span class="c"># Run the bridge (host networking is required for UPnP discovery)</span>
+docker run -d <span class="f">\</span>
+  --name sonos-upnp-bridge <span class="f">\</span>
+  --network host <span class="f">\</span>
+  --restart unless-stopped <span class="f">\</span>
+  ghcr.io/meltface-80/sonos-upnp-bridge:latest</code></pre>
+    </div>
+
+    <p>
+      That is the whole installation. Within a few seconds the bridge has found your players;
+      open <code>http://&lt;host-ip&gt;:1500/</code> to see which rooms it is publishing.
+    </p>
+
+    <ol class="steps">
+      <li>Start the container on a Linux host on the same subnet as your speakers.</li>
+      <li>Open Audirvana and go to its audio device list.</li>
+      <li>Your Sonos rooms appear as <em>Kitchen (Sonos)</em>, <em>Study (Sonos)</em> and so on. Pick one and play.</li>
+    </ol>
+
+    <div class="callout">
+      <strong>Host networking matters.</strong> UPnP discovery is multicast, and multicast does
+      not cross Docker&rsquo;s default bridge network. <code>--network host</code> is what lets
+      the bridge see your Sonos players and lets Audirvana see the bridge. Docker Desktop on
+      macOS and Windows does not provide real host networking, so run the container on Linux.
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Configuration</h2>
+    <p class="muted">Everything is optional. Pass any of these with <code>-e NAME=value</code>.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Variable</th><th>Default</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>NAME_SUFFIX</code></td><td><code>" (Sonos)"</code></td>
+              <td>Appended to each room name in Audirvana. Set to empty for bare room names.</td></tr>
+          <tr><td><code>HTTP_PORT</code></td><td><code>1500</code></td>
+              <td>Port for the bridge&rsquo;s device descriptions, control endpoints and status page.</td></tr>
+          <tr><td><code>SONOS_HOSTS</code></td><td>—</td>
+              <td>Comma-separated player IPs to use when multicast discovery is unreliable. One is enough.</td></tr>
+          <tr><td><code>INCLUDE_ZONES</code></td><td>—</td>
+              <td>Only publish these rooms, e.g. <code>Kitchen,Study</code>.</td></tr>
+          <tr><td><code>EXCLUDE_ZONES</code></td><td>—</td>
+              <td>Publish everything except these rooms.</td></tr>
+          <tr><td><code>BRIDGE_MODE</code></td><td><code>queue</code></td>
+              <td><code>queue</code> uses the Sonos queue for gapless playback; <code>direct</code> loads each track straight onto the transport.</td></tr>
+          <tr><td><code>UNGROUP_ON_PLAY</code></td><td><code>false</code></td>
+              <td>Detach a room from its Sonos group before playing to it, instead of playing to the whole group.</td></tr>
+          <tr><td><code>BRIDGE_IP</code></td><td>auto</td>
+              <td>Address to advertise, for hosts with several network interfaces.</td></tr>
+          <tr><td><code>LOG_LEVEL</code></td><td><code>INFO</code></td>
+              <td>Set to <code>DEBUG</code> to log every UPnP action in both directions.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Good to know</h2>
+
+    <details>
+      <summary>Which formats will actually play?</summary>
+      <p>
+        Sonos accepts FLAC, ALAC, WAV, AIFF, MP3, AAC and Ogg over HTTP, up to 24-bit/48&nbsp;kHz
+        on current S2 hardware. It does not play DSD, and higher sample rates will be refused by
+        the player. Set Audirvana&rsquo;s maximum sample rate for the device accordingly &mdash;
+        the bridge advertises the formats but cannot resample.
+      </p>
+    </details>
+
+    <details>
+      <summary>No rooms are showing up</summary>
+      <p>
+        Open <code>http://&lt;host-ip&gt;:1500/</code>. If the table is empty the bridge has not
+        found your players: confirm the container really is on host networking, that the host
+        shares a subnet with the speakers, and that nothing else on the host already holds
+        UDP&nbsp;1900. Setting <code>SONOS_HOSTS</code> to one player&rsquo;s IP bypasses
+        discovery entirely.
+      </p>
+    </details>
+
+    <details>
+      <summary>Rooms show up in the bridge but not in Audirvana</summary>
+      <p>
+        That is the second half of the same multicast path. Audirvana must be on the same subnet,
+        and some routers and access points filter multicast between wired and wireless clients
+        &mdash; look for an IGMP snooping or &ldquo;multicast enhancement&rdquo; setting. Restarting
+        Audirvana forces a fresh search.
+      </p>
+    </details>
+
+    <details>
+      <summary>Playing to a grouped room plays everywhere</summary>
+      <p>
+        That is how Sonos groups work: transport commands belong to the group coordinator. Either
+        ungroup the room in the Sonos app, or start the bridge with
+        <code>UNGROUP_ON_PLAY=true</code> to have it detach the room automatically.
+      </p>
+    </details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    MIT licensed ·
+    <a href="https://github.com/meltface-80/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-">Repository</a> ·
+    Not affiliated with Sonos, Inc. or Audirvana.
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll("[data-copy]").forEach(function (button) {
+  button.addEventListener("click", function () {
+    var code = button.parentElement.querySelector("pre").innerText;
+    navigator.clipboard.writeText(code).then(function () {
+      var previous = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(function () { button.textContent = previous; }, 1600);
+    }).catch(function () {
+      button.textContent = "Press ⌘C";
+    });
+  });
+});
+</script>
+</body>
+</html>
