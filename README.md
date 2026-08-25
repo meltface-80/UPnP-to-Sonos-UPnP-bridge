@@ -22,7 +22,16 @@ as a clean, standards-compliant `MediaRenderer:1` device carrying the room's own
 ## Install
 
 Run it on an always-on Linux machine on the same network as your speakers — a NAS, a Raspberry
-Pi, a home server:
+Pi, a home server.
+
+If Docker is not installed yet:
+
+```bash
+dietpi-software install 162              # DietPi (162 is its Docker package)
+curl -fsSL https://get.docker.com | sh   # Debian, Ubuntu, Raspberry Pi OS
+```
+
+Then start the bridge:
 
 ```bash
 docker run -d \
