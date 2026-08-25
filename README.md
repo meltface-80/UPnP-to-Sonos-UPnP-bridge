@@ -1,4 +1,12 @@
-# UPnP to Sonos UPnP bridge for Audirvana
+<div align="center"> 
+
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/fc1dd26e-db7f-4e27-8f66-b0ab74db89e3" />
+
+</div>
+
+# UPnP to Sonos UPnP bridge for Audirvana - v1.0.0
+
+**📖 Install guide & docs: [meltface-80.github.io/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-](https://meltface-80.github.io/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-/)**
 
 Audirvana can stream to any standard UPnP/DLNA renderer, but not to Sonos. Sonos players
 advertise themselves as `ZonePlayer` devices rather than `MediaRenderer` devices, hide their
@@ -9,7 +17,7 @@ This bridge fixes that. It discovers your Sonos players, and publishes each room
 as a clean, standards-compliant `MediaRenderer:1` device carrying the room's own name — so
 **Kitchen**, **Study** and the rest simply appear in Audirvana's device list and play.
 
-📄 **[Project page](https://meltface-80.github.io/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-/)**
+---
 
 ## Install
 
