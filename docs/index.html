@@ -301,6 +301,11 @@
        a NAS, a Raspberry Pi, a home server. There is nothing to configure.</p>
 
     <div class="out">
+      <div class="note"><b>No Docker yet?</b> On DietPi run <code>dietpi-software install 162</code>
+         — <code>162</code> is its own Docker package, and the right way to install it there. On
+         Debian, Ubuntu or Raspberry Pi OS, <code>curl -fsSL https://get.docker.com | sh</code>.
+         If a DietPi install complains about missing kernel modules, reboot first and run it
+         again.</div>
       <div class="codebox">
         <button class="copy-btn" id="copy" type="button">Copy</button>
 <pre id="cmd"><span class="c"># Host networking is required — UPnP discovery is multicast</span>
