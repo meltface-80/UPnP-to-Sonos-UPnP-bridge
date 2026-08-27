@@ -9,6 +9,7 @@ import aiohttp
 from defusedxml import ElementTree as DET
 
 from .soap import SoapClient, UPnPError
+from .speakers import DEFAULT_KIND, classify
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +43,22 @@ def _localname(tag: str) -> str:
     return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
 
+def parse_channel_map(value: str) -> dict[str, set[str]]:
+    """Split a ``ChannelMapSet`` into ``{player uid: {channels}}``.
+
+    The attribute looks like ``RINCON_A:LF,LF;RINCON_B:RF,RF`` - one entry per
+    player bonded into the room, naming the channels it is responsible for.
+    """
+    mapping: dict[str, set[str]] = {}
+    for entry in (value or "").split(";"):
+        uid, _, channels = entry.partition(":")
+        uid = uid.strip()
+        if not uid or not channels:
+            continue
+        mapping[uid] = {part.strip().upper() for part in channels.split(",") if part.strip()}
+    return mapping
+
+
 @dataclass
 class ZoneInfo:
     """One Sonos room as reported by ZoneGroupTopology."""
@@ -55,10 +72,26 @@ class ZoneInfo:
     is_bridge: bool = False
     software_version: str = ""
     model: str = ""
+    channel_map: str = ""
 
     @property
     def is_coordinator(self) -> bool:
         return not self.coordinator_uid or self.coordinator_uid == self.uid
+
+    @property
+    def stereo_pair(self) -> bool:
+        """True when two speakers are bonded as the left and right of this room.
+
+        A room with a bonded sub maps one player to both channels
+        (``LF,RF``), so only a genuine pair - one player per channel - counts.
+        """
+        channels = parse_channel_map(self.channel_map).values()
+        return any(c == {"LF"} for c in channels) and any(c == {"RF"} for c in channels)
+
+    @property
+    def icon_kind(self) -> str:
+        """The line-art glyph that matches this room's hardware."""
+        return classify(self.model) if self.model else DEFAULT_KIND
 
     @property
     def base_url(self) -> str:
@@ -120,6 +153,7 @@ def parse_zone_group_state(xml_text: str) -> list[ZoneInfo]:
                     invisible=(member.get("Invisible", "0") == "1"),
                     is_bridge=(member.get("IsZoneBridge", "0") == "1"),
                     software_version=member.get("SoftwareVersion", "") or "",
+                    channel_map=member.get("ChannelMapSet", "") or "",
                 )
             )
     return zones

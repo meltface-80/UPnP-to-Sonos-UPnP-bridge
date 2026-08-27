@@ -1,8 +1,10 @@
-"""A tiny procedurally generated device icon.
+"""Device icons, drawn at start-up rather than shipped as binary assets.
 
 Control points (Audirvana included) show the renderer's icon next to its name.
-Rather than ship binary assets, the icon is drawn with plain arithmetic and
-encoded as a PNG at start-up - no image library, no files to keep in sync.
+Each bridged room gets the line-art glyph for its own model - a Five looks like
+a Five, a Beam like a Beam, a stereo pair like two of them - drawn from the
+outlines in :mod:`sonosbridge.speakers` and encoded as a PNG with nothing but
+arithmetic and :mod:`zlib`.
 """
 
 from __future__ import annotations
@@ -10,11 +12,18 @@ from __future__ import annotations
 import math
 import struct
 import zlib
+from collections.abc import Sequence
 from functools import lru_cache
+
+from .speakers import DEFAULT_KIND, VIEWBOX, Path, classify, glyph
 
 BACKGROUND = (24, 26, 31)
 FOREGROUND = (240, 242, 245)
-ACCENT = (110, 190, 255)
+
+#: Stroke weight as a fraction of the icon's edge, with a floor so the smallest
+#: icon still has a visible line.
+STROKE_RATIO = 0.055
+MIN_STROKE = 1.6
 
 
 def _chunk(kind: bytes, payload: bytes) -> bytes:
@@ -42,18 +51,57 @@ def _blend(base: tuple[int, int, int], top: tuple[int, int, int], alpha: float):
     return tuple(round(b + (t - b) * alpha) for b, t in zip(base, top, strict=True))
 
 
-@lru_cache(maxsize=8)
-def render(size: int = 48) -> bytes:
-    """Draw a speaker-with-soundwaves glyph at *size* x *size* pixels."""
-    radius = size * 0.22          # corner rounding of the tile
-    cx, cy = size / 2.0, size / 2.0
+def _stroke_coverage(size: int, paths: Sequence[Path], width: float) -> list[float]:
+    """Anti-aliased coverage for a set of round-capped polylines.
+
+    Each segment is a capsule: coverage falls off with the distance from the
+    segment, and segments combine by taking the strongest.  Only the pixels
+    inside a segment's bounding box are visited, which keeps a 120px icon well
+    under a millisecond's worth of arithmetic per stroke.
+    """
+    scale = size / VIEWBOX
+    half = width / 2.0
+    coverage = [0.0] * (size * size)
+    for path in paths:
+        points = [(x * scale, y * scale) for x, y in path]
+        for (ax, ay), (bx, by) in zip(points, points[1:], strict=False):
+            dx, dy = bx - ax, by - ay
+            length_sq = dx * dx + dy * dy
+            x_from = max(0, int(math.floor(min(ax, bx) - half - 1)))
+            x_to = min(size - 1, int(math.ceil(max(ax, bx) + half + 1)))
+            y_from = max(0, int(math.floor(min(ay, by) - half - 1)))
+            y_to = min(size - 1, int(math.ceil(max(ay, by) + half + 1)))
+            for y in range(y_from, y_to + 1):
+                py = y + 0.5
+                row = y * size
+                for x in range(x_from, x_to + 1):
+                    px = x + 0.5
+                    if length_sq > 1e-12:
+                        t = ((px - ax) * dx + (py - ay) * dy) / length_sq
+                        t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+                    else:
+                        t = 0.0
+                    distance = math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+                    alpha = half + 0.5 - distance
+                    if alpha > 0.0:
+                        if alpha > 1.0:
+                            alpha = 1.0
+                        if alpha > coverage[row + x]:
+                            coverage[row + x] = alpha
+    return coverage
+
+
+@lru_cache(maxsize=64)
+def render(size: int = 48, kind: str = DEFAULT_KIND, pair: bool = False) -> bytes:
+    """Draw *kind* as a line glyph on a rounded tile, *size* x *size* pixels."""
+    radius = size * 0.22  # corner rounding of the tile
+    stroke = max(MIN_STROKE, size * STROKE_RATIO)
+    coverage = _stroke_coverage(size, glyph(kind, pair), stroke)
+
     rows = bytearray()
-
-    # Soundwave arcs, expressed as (radius, thickness) in units of `size`.
-    arcs = [(0.20, 0.052), (0.30, 0.052), (0.40, 0.052)]
-
     for y in range(size):
         rows.append(0)  # PNG filter type 0 (None) for this scanline
+        row = y * size
         for x in range(size):
             px, py = x + 0.5, y + 0.5
 
@@ -63,31 +111,15 @@ def render(size: int = 48) -> bytes:
             corner = math.hypot(dx, dy)
             tile_alpha = max(0.0, min(1.0, radius - corner + 0.5)) if corner > 0 else 1.0
 
-            colour = BACKGROUND
-            # The speaker body: a small rounded block left of centre.
-            bx0, bx1 = size * 0.24, size * 0.40
-            by0, by1 = size * 0.38, size * 0.62
-            if bx0 <= px <= bx1 and by0 <= py <= by1:
-                colour = FOREGROUND
-            # ...and its cone, a triangle opening to the right.
-            elif bx1 <= px <= size * 0.52:
-                spread = (px - bx1) / (size * 0.12) * (size * 0.20)
-                if abs(py - cy) <= size * 0.12 + spread:
-                    colour = FOREGROUND
-
-            # Concentric arcs to the right of the cone.
-            dist = math.hypot(px - cx * 1.02, py - cy) / size
-            if px > size * 0.55:
-                for arc_r, thickness in arcs:
-                    if abs(dist - arc_r) < thickness / 2:
-                        colour = ACCENT
-                        break
-
-            r, g, b = _blend(BACKGROUND, colour, 1.0) if colour != BACKGROUND else BACKGROUND
-            alpha = round(255 * tile_alpha)
-            rows.extend((r, g, b, alpha))
+            ink = coverage[row + x]
+            r, g, b = _blend(BACKGROUND, FOREGROUND, ink) if ink else BACKGROUND
+            rows.extend((r, g, b, round(255 * tile_alpha)))
 
     return _encode_png(size, size, rows)
+
+
+def render_for_model(size: int, model: str, pair: bool = False) -> bytes:
+    return render(size, classify(model), pair)
 
 
 ICON_SIZES = (48, 120)

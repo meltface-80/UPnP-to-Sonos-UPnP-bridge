@@ -106,6 +106,16 @@ class VirtualRenderer:
         return f"{self.zone.name}{self.config.name_suffix}"
 
     @property
+    def icon_kind(self) -> str:
+        """Which speaker glyph this room's icon should use."""
+        return self.zone.icon_kind
+
+    @property
+    def stereo_pair(self) -> bool:
+        """True when the room is a bonded pair, so the icon shows two speakers."""
+        return self.zone.stereo_pair
+
+    @property
     def device_path(self) -> str:
         return f"/dev/{self.uuid}"
 
@@ -738,6 +748,8 @@ class VirtualRenderer:
             "sonosUid": self.zone.uid,
             "sonosIp": self.zone.ip,
             "model": self.zone.model,
+            "iconKind": self.icon_kind,
+            "stereoPair": self.stereo_pair,
             "coordinator": coordinator.name if coordinator else self.zone.name,
             "descriptionUrl": self.description_url,
             "transportState": self.state.transport_state,

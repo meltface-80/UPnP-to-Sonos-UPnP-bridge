@@ -79,6 +79,28 @@ Translating between the two dialects is the interesting part:
 Audio never passes through the bridge. Sonos fetches it straight from Audirvana's own HTTP
 server, so there is no extra hop and no transcoding.
 
+## Device icons
+
+Control points show an icon beside each device, so every room gets a minimalist line drawing of
+the speaker it actually is: a Five is a wide box, an Era 300 is cinched at the waist, a Beam is a
+rounded bar, a Sub is a slab with a hole through it. **A room that is a bonded stereo pair is
+drawn as two speakers**, which makes a paired room obvious at a glance in a device list.
+
+| | |
+| --- | --- |
+| Five, Play:5, Play:3 | One, One SL, Play:1 |
+| Era 100, Era 300 | Beam, Arc, Arc Ultra, Ray |
+| Playbar, Playbase | Move, Move 2, Roam, Roam SL |
+| Sub, Sub Mini | Amp, Connect:Amp, Port, Connect |
+| Symfonisk bookshelf, lamp, picture frame | anything else: a generic speaker |
+
+The model is read from the player's own description document, so nothing needs configuring.
+Each glyph is described once as a set of rounded outlines and drawn from arithmetic at start-up -
+there are no image files in the repository - then served as PNG for UPnP
+(`/dev/<uuid>/icon/48.png`, `/dev/<uuid>/icon/120.png`) and as SVG at `/dev/<uuid>/icon.svg` for
+control points and dashboards that would rather scale it. The bridge's own status page shows the
+same icons next to your rooms.
+
 ## Configuration
 
 Everything is optional; pass any of these with `-e NAME=value`.
