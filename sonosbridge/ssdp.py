@@ -14,6 +14,7 @@ import logging
 import random
 from collections.abc import Callable, Iterable
 
+from .config import CONFIG_ID
 from .net import SSDP_ADDR, SSDP_PORT, host_from_url, make_ssdp_socket, parse_headers
 from .renderer import MEDIA_RENDERER, SERVICE_IDS, VirtualRenderer
 from .sonos import ZONE_PLAYER_ST
@@ -168,7 +169,7 @@ class SsdpServer:
                 f"ST: {notification_type}\r\n"
                 f"USN: {usn}\r\n"
                 f"BOOTID.UPNP.ORG: {self.boot_id}\r\n"
-                "CONFIGID.UPNP.ORG: 1\r\n"
+                f"CONFIGID.UPNP.ORG: {CONFIG_ID}\r\n"
                 "\r\n"
             ).encode()
             try:
@@ -198,7 +199,7 @@ class SsdpServer:
                 f"NTS: {nts}",
                 f"USN: {usn}",
                 f"BOOTID.UPNP.ORG: {self.boot_id}",
-                "CONFIGID.UPNP.ORG: 1",
+                f"CONFIGID.UPNP.ORG: {CONFIG_ID}",
             ]
             if nts == "ssdp:alive":
                 lines[2:2] = [

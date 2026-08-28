@@ -11,7 +11,10 @@ from aiohttp.test_utils import TestClient, TestServer
 from defusedxml import ElementTree as DET
 
 from sonosbridge import lastchange
+from sonosbridge.config import CONFIG_ID
 from sonosbridge.gena import SubscriptionManager
+from sonosbridge.icon import render as render_icon
+from sonosbridge.icon import token as icon_token
 from sonosbridge.renderer import VirtualRenderer
 from sonosbridge.server import create_app
 from sonosbridge.soap import build_request, parse_response
@@ -147,6 +150,39 @@ async def test_the_icon_is_also_available_as_svg(bridged):
     assert response.headers["Content-Type"].startswith("image/svg+xml")
     body = await response.text()
     assert body.startswith("<svg") and "<title>Sonos One</title>" in body
+
+
+async def test_the_icon_url_carries_a_fingerprint_of_the_drawing(bridged):
+    """A cached icon must never shadow a new one: new drawing, new URL."""
+    client, renderer = bridged
+    renderer.zone.model = "Sonos Beam"
+    body = await (await client.get(f"/dev/{renderer.uuid}/desc.xml")).text()
+    stamp = icon_token("beam")
+    assert f"/icon/{stamp}/48.png" in body
+    assert f"/icon/{stamp}/512.png" in body
+
+    stamped = await client.get(f"/dev/{renderer.uuid}/icon/{stamp}/48.png")
+    assert stamped.status == 200
+    assert "immutable" in stamped.headers["Cache-Control"]
+    assert await stamped.read() == render_icon(48, "beam")
+
+
+async def test_the_old_unstamped_icon_path_still_answers(bridged):
+    """A control point holding an older description gets today's drawing."""
+    client, renderer = bridged
+    renderer.zone.model = "Sonos Beam"
+    response = await client.get(f"/dev/{renderer.uuid}/icon/48.png")
+    assert response.status == 200
+    assert await response.read() == render_icon(48, "beam")
+    # Briefly cached, so a client on the old path recovers by itself.
+    assert response.headers["Cache-Control"] == "max-age=300"
+
+
+async def test_the_description_advertises_a_config_id(bridged):
+    """UPnP's signal that a cached description is out of date."""
+    client, renderer = bridged
+    body = await (await client.get(f"/dev/{renderer.uuid}/desc.xml")).text()
+    assert f'configId="{CONFIG_ID}"' in body
 
 
 async def test_unknown_device_is_a_404(bridged):

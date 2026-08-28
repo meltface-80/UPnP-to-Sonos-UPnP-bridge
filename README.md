@@ -4,7 +4,7 @@
 
 </div>
 
-# UPnP to Sonos UPnP bridge for Audirvana - v1.0.1
+# UPnP to Sonos UPnP bridge for Audirvana - v1.0.2
 
 **📖 Install guide & docs: [meltface-80.github.io/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-](https://meltface-80.github.io/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-/)**
 
