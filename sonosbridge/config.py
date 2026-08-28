@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 UUID_NAMESPACE = uuid.UUID("6f9d1b3e-3a1d-5d5a-9f4b-2b4a6c8d0e11")
 
 BRIDGE_NAME = "Sonos UPnP Bridge"
-BRIDGE_VERSION = "1.0.0"
+BRIDGE_VERSION = "1.0.1"
 
 
 def _str(name: str, default: str) -> str:

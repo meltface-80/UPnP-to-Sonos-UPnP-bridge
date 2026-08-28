@@ -17,7 +17,7 @@ from aiohttp import web
 from . import lastchange
 from .config import BRIDGE_NAME, BRIDGE_VERSION
 from .gena import parse_callbacks, parse_timeout
-from .icon import ICON_SIZES
+from .icon import ICON_SIZES, icon_for_model
 from .icon import render as render_icon
 from .renderer import SERVICE_TYPES
 from .soap import UPnPError, build_fault, build_response, parse_action
@@ -90,15 +90,16 @@ async def handle_scpd(request: web.Request) -> web.Response:
 
 
 async def handle_icon(request: web.Request) -> web.Response:
-    _renderer(request)  # validates the device id
+    renderer = _renderer(request)
     try:
         size = int(request.match_info["size"])
     except ValueError as exc:
         raise web.HTTPNotFound(text="Unknown icon") from exc
     if size not in ICON_SIZES:
         raise web.HTTPNotFound(text="Unknown icon size")
+    # Each zone gets the drawing of the hardware it actually runs on.
     return web.Response(
-        body=render_icon(size),
+        body=render_icon(icon_for_model(renderer.zone.model), size),
         headers={"Content-Type": "image/png", "Cache-Control": "max-age=86400"},
     )
 

@@ -4,7 +4,7 @@
 
 </div>
 
-# UPnP to Sonos UPnP bridge for Audirvana - v1.0.0
+# UPnP to Sonos UPnP bridge for Audirvana - v1.0.1
 
 **📖 Install guide & docs: [meltface-80.github.io/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-](https://meltface-80.github.io/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-/)**
 
@@ -75,6 +75,9 @@ Translating between the two dialects is the interesting part:
 - **State flows back.** The bridge subscribes to each player's events and re-publishes them as
   standard `LastChange` events, so Audirvana's transport display stays in sync — with a periodic
   reconcile as a safety net.
+- **Each room shows its own hardware.** The player's model name picks a line drawing of that
+  speaker — an Arc, a Sub, an Era 100 — which the bridge draws and serves as PNG, so the device
+  list shows what is actually in the room. Unrecognised models get a plain cabinet.
 
 Audio never passes through the bridge. Sonos fetches it straight from Audirvana's own HTTP
 server, so there is no extra hop and no transcoding.

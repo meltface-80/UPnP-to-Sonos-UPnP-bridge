@@ -12,6 +12,7 @@ from defusedxml import ElementTree as DET
 
 from sonosbridge import lastchange
 from sonosbridge.gena import SubscriptionManager
+from sonosbridge.icon import render as render_icon
 from sonosbridge.renderer import VirtualRenderer
 from sonosbridge.server import create_app
 from sonosbridge.soap import build_request, parse_response
@@ -124,6 +125,18 @@ async def test_icons_are_served(bridged):
     assert response.status == 200
     assert (await response.read())[:8] == b"\x89PNG\r\n\x1a\n"
     assert (await client.get(f"/dev/{renderer.uuid}/icon/999.png")).status == 404
+
+
+async def test_the_icon_follows_the_players_model(bridged):
+    client, renderer = bridged
+    renderer.zone.model = "Sonos One"
+    one = await (await client.get(f"/dev/{renderer.uuid}/icon/48.png")).read()
+    assert one == render_icon("one", 48)
+
+    renderer.zone.model = "Sonos Arc"
+    arc = await (await client.get(f"/dev/{renderer.uuid}/icon/48.png")).read()
+    assert arc == render_icon("arc", 48)
+    assert arc != one
 
 
 async def test_unknown_device_is_a_404(bridged):
