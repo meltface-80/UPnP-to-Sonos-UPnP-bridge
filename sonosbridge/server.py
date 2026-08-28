@@ -17,10 +17,12 @@ from aiohttp import web
 from . import lastchange
 from .config import BRIDGE_NAME, BRIDGE_VERSION
 from .gena import parse_callbacks, parse_timeout
-from .icon import ICON_SIZES, icon_for_model
+from .icon import ICON_SIZES
 from .icon import render as render_icon
 from .renderer import SERVICE_TYPES
 from .soap import UPnPError, build_fault, build_response, parse_action
+from .speakers import label as speaker_label
+from .speakers import svg as speaker_svg
 from .ssdp import server_header
 
 LOGGER = logging.getLogger(__name__)
@@ -52,6 +54,7 @@ def create_app(bridge) -> web.Application:
     app.router.add_get("/scpd/{name}.xml", handle_scpd)
     app.router.add_get("/dev/{uuid}/desc.xml", handle_description)
     app.router.add_get("/dev/{uuid}/icon/{size}.png", handle_icon)
+    app.router.add_get("/dev/{uuid}/icon.svg", handle_icon_svg)
     app.router.add_post("/dev/{uuid}/svc/{service}/control", handle_control)
     app.router.add_route("SUBSCRIBE", "/dev/{uuid}/svc/{service}/event", handle_subscribe)
     app.router.add_route("UNSUBSCRIBE", "/dev/{uuid}/svc/{service}/event", handle_unsubscribe)
@@ -97,10 +100,26 @@ async def handle_icon(request: web.Request) -> web.Response:
         raise web.HTTPNotFound(text="Unknown icon") from exc
     if size not in ICON_SIZES:
         raise web.HTTPNotFound(text="Unknown icon size")
-    # Each zone gets the drawing of the hardware it actually runs on.
     return web.Response(
-        body=render_icon(icon_for_model(renderer.zone.model), size),
+        body=render_icon(size, renderer.icon_kind, renderer.stereo_pair),
         headers={"Content-Type": "image/png", "Cache-Control": "max-age=86400"},
+    )
+
+
+async def handle_icon_svg(request: web.Request) -> web.Response:
+    """The same glyph as vector art, for control points and dashboards that
+    would rather scale it than take the 48px PNG."""
+    renderer = _renderer(request)
+    body = speaker_svg(
+        renderer.icon_kind,
+        renderer.stereo_pair,
+        size=128,
+        title=renderer.zone.model or speaker_label(renderer.icon_kind),
+        auto_theme=True,
+    )
+    return web.Response(
+        text=body,
+        headers={"Content-Type": "image/svg+xml", "Cache-Control": "max-age=86400"},
     )
 
 
@@ -232,10 +251,20 @@ async def handle_status_page(request: web.Request) -> web.Response:
     status = request.app[BRIDGE_KEY].status()
     rows = []
     for device in status["devices"]:
+        icon = speaker_svg(
+            str(device["iconKind"]),
+            bool(device["stereoPair"]),
+            size=30,
+            title=str(device["model"]) or speaker_label(str(device["iconKind"])),
+        )
+        model = str(device["model"]) or "-"
+        if device["stereoPair"]:
+            model += " (stereo pair)"
         rows.append(
             "<tr>"
-            f"<td><strong>{html.escape(str(device['friendlyName']))}</strong></td>"
-            f"<td>{html.escape(str(device['model']) or '-')}</td>"
+            f'<td><span class="room"><span class="glyph">{icon}</span>'
+            f"<strong>{html.escape(str(device['friendlyName']))}</strong></span></td>"
+            f"<td>{html.escape(model)}</td>"
             f"<td>{html.escape(str(device['sonosIp']))}</td>"
             f"<td>{html.escape(str(device['coordinator']))}</td>"
             f"<td>{html.escape(str(device['transportState']))}</td>"
@@ -268,6 +297,8 @@ async def handle_status_page(request: web.Request) -> web.Response:
  th {{ font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; opacity: .65; }}
  tr:last-child td {{ border-bottom: 0; }}
  code {{ background: rgba(128,128,128,.16); padding: .1rem .35rem; border-radius: 4px; }}
+ .room {{ display: flex; align-items: center; gap: .6rem; white-space: nowrap; }}
+ .glyph {{ display: inline-flex; opacity: .8; flex: 0 0 auto; }}
  footer {{ margin-top: 1.5rem; font-size: .85rem; opacity: .65; }}
 </style></head><body><main>
 <h1>{html.escape(BRIDGE_NAME)} <span style="opacity:.5">v{BRIDGE_VERSION}</span></h1>

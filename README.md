@@ -75,12 +75,32 @@ Translating between the two dialects is the interesting part:
 - **State flows back.** The bridge subscribes to each player's events and re-publishes them as
   standard `LastChange` events, so Audirvana's transport display stays in sync — with a periodic
   reconcile as a safety net.
-- **Each room shows its own hardware.** The player's model name picks a line drawing of that
-  speaker — an Arc, a Sub, an Era 100 — which the bridge draws and serves as PNG, so the device
-  list shows what is actually in the room. Unrecognised models get a plain cabinet.
 
 Audio never passes through the bridge. Sonos fetches it straight from Audirvana's own HTTP
 server, so there is no extra hop and no transcoding.
+
+## Device icons
+
+Control points show an icon beside each device, so every room gets a line drawing of the speaker
+it actually is, seen in three-quarter view: an Era 300 keeps its cinched waist, a Sub the port cut
+through it, a soundbar its length, a Move its charging base. **A room that is a bonded stereo pair
+is drawn as two speakers**, which makes a paired room obvious at a glance in a device list.
+
+| | |
+| --- | --- |
+| Five, Play:5, Play:3 | One, One SL, Play:1 |
+| Era 100, Era 300 | Beam, Arc, Arc Ultra, Ray |
+| Playbar, Playbase | Move, Move 2, Roam, Roam SL |
+| Sub, Sub Mini | Amp, Connect:Amp, Port, Connect |
+| Symfonisk bookshelf, lamp, picture frame | anything else: a generic speaker |
+
+The model is read from the player's own description document, so nothing needs configuring.
+Each cabinet is described once by its real width, depth and height and flattened through one
+shared projection at start-up - there are no image files in the repository - then served as PNG
+for UPnP
+(`/dev/<uuid>/icon/48.png`, `/dev/<uuid>/icon/120.png`) and as SVG at `/dev/<uuid>/icon.svg` for
+control points and dashboards that would rather scale it. The bridge's own status page shows the
+same icons next to your rooms.
 
 ## Configuration
 

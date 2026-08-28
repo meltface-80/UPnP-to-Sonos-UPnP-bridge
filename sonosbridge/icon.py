@@ -1,9 +1,10 @@
-"""Device icons, drawn at start-up rather than shipped as files.
+"""Device icons, drawn at start-up rather than shipped as binary assets.
 
-Control points (Audirvana included) show a renderer's icon next to its name.
-Each Sonos model has its own line drawing in :mod:`sonosbridge.deviceicons`;
-here those outlines are stroked into a PNG with plain arithmetic - no image
-library, no binary assets to keep in sync with the code.
+Control points (Audirvana included) show the renderer's icon next to its name.
+Each bridged room gets the line drawing of its own model - a Five looks like a
+Five, a Beam like a Beam, a stereo pair like two of them - taken from the
+outlines in :mod:`sonosbridge.speakers` and encoded as a PNG with nothing but
+arithmetic and :mod:`zlib`.
 """
 
 from __future__ import annotations
@@ -11,21 +12,19 @@ from __future__ import annotations
 import math
 import struct
 import zlib
+from collections.abc import Sequence
 from functools import lru_cache
 
-from .deviceicons import VIEW, icon_for_model, polylines
+from .speakers import DEFAULT_KIND, VIEWBOX, Path, classify, glyph
 
 BACKGROUND = (24, 26, 31)
 FOREGROUND = (240, 242, 245)
 
-STROKE_UNITS = 1.25      # line weight on the 32-unit grid the devices are drawn on
-MIN_STROKE_PX = 1.5      # below this a hairline breaks up into dots
-CORNER = 0.22            # tile rounding, as a fraction of the icon
-INSET = 0.07             # keep the drawing clear of the tile's rounded corners
-
-ICON_SIZES = (48, 120)
-
-__all__ = ["ICON_SIZES", "icon_for_model", "icon_list_xml", "render"]
+#: Stroke weight as a fraction of the icon's edge, with a floor so the smallest
+#: icon still has a visible line.  The drawings are three-quarter views with
+#: real line work in them, so they want a finer stroke than a flat glyph would.
+STROKE_RATIO = 0.040
+MIN_STROKE = 1.5
 
 
 def _chunk(kind: bytes, payload: bytes) -> bytes:
@@ -53,73 +52,78 @@ def _blend(base: tuple[int, int, int], top: tuple[int, int, int], alpha: float):
     return tuple(round(b + (t - b) * alpha) for b, t in zip(base, top, strict=True))
 
 
-def _segment_distance(px: float, py: float, x0: float, y0: float, x1: float, y1: float) -> float:
-    dx, dy = x1 - x0, y1 - y0
-    length = dx * dx + dy * dy
-    if length <= 1e-12:
-        return math.hypot(px - x0, py - y0)
-    t = ((px - x0) * dx + (py - y0) * dy) / length
-    t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
-    return math.hypot(px - (x0 + t * dx), py - (y0 + t * dy))
+def _stroke_coverage(size: int, paths: Sequence[Path], width: float) -> list[float]:
+    """Anti-aliased coverage for a set of round-capped polylines.
 
-
-def _coverage(name: str, size: int) -> list[float]:
-    """Per-pixel ink coverage of the stroked outline, 0.0 to 1.0.
-
-    Distance to the nearest segment gives round caps and joins for free, and
-    the half-pixel ramp either side of the edge is the anti-aliasing.
+    Each segment is a capsule: coverage falls off with the distance from the
+    segment, and segments combine by taking the strongest.  Only the pixels
+    inside a segment's bounding box are visited, which keeps a 120px icon well
+    under a millisecond's worth of arithmetic per stroke.
     """
-    scale = size * (1 - 2 * INSET) / VIEW
-    offset = size * INSET
-    half = max(STROKE_UNITS * scale, MIN_STROKE_PX) / 2.0
-    reach = half + 0.5
-    ink = [0.0] * (size * size)
-
-    for run in polylines(name):
-        points = [(x * scale + offset, y * scale + offset) for x, y in run]
-        for (x0, y0), (x1, y1) in zip(points, points[1:], strict=False):
-            # Only the pixels the segment can actually reach are worth testing.
-            lo_x = max(0, int(math.floor(min(x0, x1) - reach)))
-            hi_x = min(size - 1, int(math.ceil(max(x0, x1) + reach)))
-            lo_y = max(0, int(math.floor(min(y0, y1) - reach)))
-            hi_y = min(size - 1, int(math.ceil(max(y0, y1) + reach)))
-            for y in range(lo_y, hi_y + 1):
+    scale = size / VIEWBOX
+    half = width / 2.0
+    coverage = [0.0] * (size * size)
+    for path in paths:
+        points = [(x * scale, y * scale) for x, y in path]
+        for (ax, ay), (bx, by) in zip(points, points[1:], strict=False):
+            dx, dy = bx - ax, by - ay
+            length_sq = dx * dx + dy * dy
+            x_from = max(0, int(math.floor(min(ax, bx) - half - 1)))
+            x_to = min(size - 1, int(math.ceil(max(ax, bx) + half + 1)))
+            y_from = max(0, int(math.floor(min(ay, by) - half - 1)))
+            y_to = min(size - 1, int(math.ceil(max(ay, by) + half + 1)))
+            for y in range(y_from, y_to + 1):
+                py = y + 0.5
                 row = y * size
-                for x in range(lo_x, hi_x + 1):
-                    distance = _segment_distance(x + 0.5, y + 0.5, x0, y0, x1, y1)
-                    alpha = reach - distance
-                    if alpha <= 0.0:
-                        continue
-                    if alpha > 1.0:
-                        alpha = 1.0
-                    if alpha > ink[row + x]:
-                        ink[row + x] = alpha
-    return ink
+                for x in range(x_from, x_to + 1):
+                    px = x + 0.5
+                    if length_sq > 1e-12:
+                        t = ((px - ax) * dx + (py - ay) * dy) / length_sq
+                        t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+                    else:
+                        t = 0.0
+                    distance = math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+                    alpha = half + 0.5 - distance
+                    if alpha > 0.0:
+                        if alpha > 1.0:
+                            alpha = 1.0
+                        if alpha > coverage[row + x]:
+                            coverage[row + x] = alpha
+    return coverage
 
 
 @lru_cache(maxsize=64)
-def render(name: str = "generic", size: int = 48) -> bytes:
-    """Draw *name* at *size* x *size* pixels: a light outline on a dark tile."""
-    ink = _coverage(name, size)
-    radius = size * CORNER
-    rows = bytearray()
+def render(size: int = 48, kind: str = DEFAULT_KIND, pair: bool = False) -> bytes:
+    """Draw *kind* as a line glyph on a rounded tile, *size* x *size* pixels."""
+    radius = size * 0.22  # corner rounding of the tile
+    stroke = max(MIN_STROKE, size * STROKE_RATIO)
+    coverage = _stroke_coverage(size, glyph(kind, pair), stroke)
 
+    rows = bytearray()
     for y in range(size):
         rows.append(0)  # PNG filter type 0 (None) for this scanline
         row = y * size
         for x in range(size):
             px, py = x + 0.5, y + 0.5
 
-            # Rounded-square mask, softened over the outermost half pixel.
+            # Rounded-square mask.
             dx = max(radius - px, px - (size - radius), 0.0)
             dy = max(radius - py, py - (size - radius), 0.0)
             corner = math.hypot(dx, dy)
-            tile = 1.0 if corner <= 0 else max(0.0, min(1.0, radius - corner + 0.5))
+            tile_alpha = max(0.0, min(1.0, radius - corner + 0.5)) if corner > 0 else 1.0
 
-            r, g, b = _blend(BACKGROUND, FOREGROUND, ink[row + x])
-            rows.extend((r, g, b, round(255 * tile)))
+            ink = coverage[row + x]
+            r, g, b = _blend(BACKGROUND, FOREGROUND, ink) if ink else BACKGROUND
+            rows.extend((r, g, b, round(255 * tile_alpha)))
 
     return _encode_png(size, size, rows)
+
+
+def render_for_model(size: int, model: str, pair: bool = False) -> bytes:
+    return render(size, classify(model), pair)
+
+
+ICON_SIZES = (48, 120)
 
 
 def icon_list_xml(base_url: str) -> str:

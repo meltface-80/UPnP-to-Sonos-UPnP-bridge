@@ -12,7 +12,6 @@ from defusedxml import ElementTree as DET
 
 from sonosbridge import lastchange
 from sonosbridge.gena import SubscriptionManager
-from sonosbridge.icon import render as render_icon
 from sonosbridge.renderer import VirtualRenderer
 from sonosbridge.server import create_app
 from sonosbridge.soap import build_request, parse_response
@@ -127,16 +126,27 @@ async def test_icons_are_served(bridged):
     assert (await client.get(f"/dev/{renderer.uuid}/icon/999.png")).status == 404
 
 
-async def test_the_icon_follows_the_players_model(bridged):
+async def test_the_icon_matches_the_room_hardware(bridged):
     client, renderer = bridged
-    renderer.zone.model = "Sonos One"
+    assert renderer.icon_kind == "one"  # the fixture room is a Sonos One
     one = await (await client.get(f"/dev/{renderer.uuid}/icon/48.png")).read()
-    assert one == render_icon("one", 48)
 
-    renderer.zone.model = "Sonos Arc"
-    arc = await (await client.get(f"/dev/{renderer.uuid}/icon/48.png")).read()
-    assert arc == render_icon("arc", 48)
-    assert arc != one
+    renderer.zone.model = "Sonos Beam"
+    beam = await (await client.get(f"/dev/{renderer.uuid}/icon/48.png")).read()
+    assert beam != one
+
+    renderer.zone.channel_map = "RINCON_AAA01400:LF,LF;RINCON_BBB01400:RF,RF"
+    pair = await (await client.get(f"/dev/{renderer.uuid}/icon/48.png")).read()
+    assert pair != beam
+
+
+async def test_the_icon_is_also_available_as_svg(bridged):
+    client, renderer = bridged
+    response = await client.get(f"/dev/{renderer.uuid}/icon.svg")
+    assert response.status == 200
+    assert response.headers["Content-Type"].startswith("image/svg+xml")
+    body = await response.text()
+    assert body.startswith("<svg") and "<title>Sonos One</title>" in body
 
 
 async def test_unknown_device_is_a_404(bridged):
@@ -361,6 +371,17 @@ async def test_status_endpoints(bridged):
     data = await (await client.get("/status.json")).json()
     assert data["devices"][0]["room"] == "Kitchen"
     assert data["devices"][0]["udn"] == renderer.udn
+    assert data["devices"][0]["iconKind"] == "one"
+    assert data["devices"][0]["stereoPair"] is False
+
+
+async def test_the_status_page_shows_each_room_as_its_own_speaker(bridged):
+    client, renderer = bridged
+    renderer.zone.model = "Sonos Five"
+    renderer.zone.channel_map = "RINCON_AAA01400:LF,LF;RINCON_BBB01400:RF,RF"
+    body = await (await client.get("/")).text()
+    assert "<svg" in body and "Sonos Five" in body
+    assert "stereo pair" in body
 
 
 async def test_event_callbacks_with_a_foreign_sid_are_rejected(bridged):

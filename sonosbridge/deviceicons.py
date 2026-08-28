@@ -314,19 +314,43 @@ def d_port():
             + [face_rect(w * 0.44, w * 0.56, h * 0.24, h * 0.76, r=w * 0.05)])
 
 
+def d_play1():
+    """Same body as a One, with the Play:1's slight taper towards the top."""
+    return taper(6.4, 6.4, 6.0, 6.0, 14.6, lid=0.70)
+
+
+def d_bookshelf():
+    """SYMFONISK bookshelf: a plain box, fabric front, no controls to speak of."""
+    return box(31.0, 10.0, 20.0)
+
+
+def d_lamp():
+    """SYMFONISK lamp: a shade sitting on the glass cylinder that holds the driver."""
+    return (cylinder(6.4, 6.4, 17.0)
+            + taper(10.4, 10.4, 8.6, 8.6, 12.0, z0=17.0, floor=True))
+
+
+def d_frame():
+    """SYMFONISK picture frame: a thin panel, hung flat against the wall."""
+    w, d, h = 41.0, 6.0, 27.0
+    return box(w, d, h) + [face_rect(w * 0.10, w * 0.90, h * 0.11, h * 0.89)]
+
+
 def d_generic():
     w, d, h = 20.0, 14.0, 15.0
     return box(w, d, h) + [face_circle(w * 0.5, h * 0.5, h * 0.28)]
 
 
 DEVICES = [
-    ("one", d_one), ("era100", d_era100), ("era300", d_era300),
+    ("one", d_one), ("play1", d_play1), ("era100", d_era100), ("era300", d_era300),
     ("five", d_five), ("play3", d_play3),
     ("arc", d_arc), ("beam", d_beam), ("ray", d_ray),
     ("playbar", d_playbar), ("playbase", d_playbase),
     ("sub", d_sub), ("submini", d_submini),
     ("move", d_move), ("roam", d_roam),
-    ("amp", d_amp), ("port", d_port), ("generic", d_generic),
+    ("amp", d_amp), ("port", d_port),
+    ("bookshelf", d_bookshelf), ("lamp", d_lamp), ("frame", d_frame),
+    ("generic", d_generic),
 ]
 
 
@@ -337,55 +361,28 @@ BUILDERS = dict(DEVICES)
 ICON_NAMES = tuple(name for name, _ in DEVICES)
 FALLBACK = "generic"
 
-# Substrings of a reported model name, longest first so that "one sl" is
-# matched before "one" and "connect:amp" before either "connect" or "amp".
-MODEL_KEYS = {
-    "one": ("one sl", "one", "play:1", "play1"),
-    "era100": ("era 100", "era100"),
-    "era300": ("era 300", "era300"),
-    "five": ("five", "play:5", "play5"),
-    "play3": ("play:3", "play3"),
-    "arc": ("arc ultra", "arc sl", "arc"),
-    "beam": ("beam",),
-    "ray": ("ray",),
-    "playbar": ("playbar",),
-    "playbase": ("playbase",),
-    "sub": ("sub",),
-    "submini": ("sub mini", "submini"),
-    "move": ("move 2", "move"),
-    "roam": ("roam sl", "roam 2", "roam"),
-    "amp": ("connect:amp", "connect amp", "amp", "zp100", "zp120"),
-    "port": ("port", "connect", "zp80", "zp90"),
-}
 
-_MATCHES = tuple(sorted(
-    ((key, name) for name, keys in MODEL_KEYS.items() for key in keys),
-    key=lambda pair: len(pair[0]),
-    reverse=True,
-))
-
-
-def icon_for_model(model: str) -> str:
-    """Pick a drawing for a player's reported ``modelName``.
-
-    Unknown or missing models get the plain cabinet, so a zone always has an
-    icon even when its description could not be read.
-    """
-    text = " ".join((model or "").lower().replace("sonos", " ").split())
-    if not text:
-        return FALLBACK
-    for key, name in _MATCHES:
-        if key in text:
-            return name
-    return FALLBACK
+def _bezier(p0, p1, p2, p3, steps):
+    for i in range(1, steps + 1):
+        t = i / steps
+        u = 1 - t
+        yield (u * u * u * p0[0] + 3 * u * u * t * p1[0]
+               + 3 * u * t * t * p2[0] + t * t * t * p3[0],
+               u * u * u * p0[1] + 3 * u * u * t * p1[1]
+               + 3 * u * t * t * p2[1] + t * t * t * p3[1])
 
 
 @cache
 def fitted(name: str) -> tuple[Path, ...]:
-    """Build a device and scale it to sit centred in the 32-unit grid."""
+    """Build a device and scale it to sit centred in the 32-unit grid.
+
+    The bounds come from the flattened curves rather than their control points,
+    so a cylinder ends up exactly as large as a box - measuring the hull would
+    leave every curved device a little short.
+    """
     set_yaw(0)
     parts = BUILDERS.get(name, BUILDERS[FALLBACK])()
-    pts = [p for path in parts for p in path.points()]
+    pts = [p for run in _runs(parts) for p in run]
     xs, ys = [p[0] for p in pts], [p[1] for p in pts]
     span = max(max(xs) - min(xs), max(ys) - min(ys))
     scale = (VIEW - 2 * MARGIN) / span
@@ -404,21 +401,10 @@ def svg_paths(name: str) -> list[str]:
     return [path.render() for path in fitted(name)]
 
 
-def _bezier(p0, p1, p2, p3, steps):
-    for i in range(1, steps + 1):
-        t = i / steps
-        u = 1 - t
-        yield (u * u * u * p0[0] + 3 * u * u * t * p1[0]
-               + 3 * u * t * t * p2[0] + t * t * t * p3[0],
-               u * u * u * p0[1] + 3 * u * u * t * p1[1]
-               + 3 * u * t * t * p2[1] + t * t * t * p3[1])
-
-
-@cache
-def polylines(name: str, steps: int = 8) -> tuple[tuple[tuple[float, float], ...], ...]:
-    """Flatten a device to plain point runs, for anything that cannot draw curves."""
+def _runs(paths, steps: int = 8) -> list[tuple[tuple[float, float], ...]]:
+    """Flatten paths to plain point runs, sampling every curve into segments."""
     runs = []
-    for path in fitted(name):
+    for path in paths:
         run: list[tuple[float, float]] = []
         start = None
         for kind, pts in path.segs:
@@ -435,4 +421,10 @@ def polylines(name: str, steps: int = 8) -> tuple[tuple[tuple[float, float], ...
                 run.append(start)
         if len(run) > 1:
             runs.append(tuple(run))
-    return tuple(runs)
+    return runs
+
+
+@cache
+def polylines(name: str) -> tuple[tuple[tuple[float, float], ...], ...]:
+    """A device as plain point runs, for anything that cannot draw curves."""
+    return tuple(_runs(fitted(name)))
