@@ -4,7 +4,7 @@
 
 </div>
 
-# UPnP to Sonos UPnP bridge for Audirvana - v1.0.1
+# UPnP to Sonos UPnP bridge for Audirvana - v1.0.2
 
 **📖 Install guide & docs: [meltface-80.github.io/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-](https://meltface-80.github.io/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-/)**
 
@@ -97,10 +97,15 @@ is drawn as two speakers**, which makes a paired room obvious at a glance in a d
 The model is read from the player's own description document, so nothing needs configuring.
 Each cabinet is described once by its real width, depth and height and flattened through one
 shared projection at start-up - there are no image files in the repository - then served as PNG
-for UPnP
-(`/dev/<uuid>/icon/48.png`, `/dev/<uuid>/icon/120.png`) and as SVG at `/dev/<uuid>/icon.svg` for
-control points and dashboards that would rather scale it. The bridge's own status page shows the
-same icons next to your rooms.
+at 48, 120, 240 and 512 pixels, and as SVG at `/dev/<uuid>/icon.svg` for control points and
+dashboards that would rather scale it. The bridge's own status page shows the same icons next to
+your rooms.
+
+Each icon's URL carries a fingerprint of the drawing behind it
+(`/dev/<uuid>/icon/<fingerprint>/120.png`). Control points cache icons hard, so a URL that stayed
+the same while the picture changed would leave them showing an old icon indefinitely; a new
+drawing is now a new URL. The description also carries a `configId`, UPnP's signal that a cached
+description is stale, so a control point knows to read it again after an upgrade.
 
 ## Configuration
 

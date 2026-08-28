@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import uuid
 from dataclasses import dataclass, field
@@ -12,7 +13,16 @@ from dataclasses import dataclass, field
 UUID_NAMESPACE = uuid.UUID("6f9d1b3e-3a1d-5d5a-9f4b-2b4a6c8d0e11")
 
 BRIDGE_NAME = "Sonos UPnP Bridge"
-BRIDGE_VERSION = "1.0.1"
+BRIDGE_VERSION = "1.0.2"
+
+#: UPnP's "the description document has changed, read it again" signal, sent in
+#: SSDP as CONFIGID.UPNP.ORG and carried on <root>.  Deriving it from the
+#: version means every release invalidates whatever a control point cached; it
+#: has to fit in 31 bits.
+CONFIG_ID = (
+    int(hashlib.blake2s(BRIDGE_VERSION.encode("utf-8"), digest_size=4).hexdigest(), 16)
+    & 0x7FFFFFFF
+)
 
 
 def _str(name: str, default: str) -> str:

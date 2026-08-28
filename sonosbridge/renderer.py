@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from xml.sax.saxutils import escape
 
 from . import didl, lastchange, protocolinfo, timeutil
-from .config import BRIDGE_NAME, BRIDGE_VERSION, Config
+from .config import BRIDGE_NAME, BRIDGE_VERSION, CONFIG_ID, Config
 from .icon import icon_list_xml
 from .soap import UPnPError
 from .sonos import (
@@ -167,7 +167,8 @@ class VirtualRenderer:
         return (
             '<?xml version="1.0" encoding="utf-8"?>'
             '<root xmlns="urn:schemas-upnp-org:device-1-0"'
-            ' xmlns:dlna="urn:schemas-dlna-org:device-1-0">'
+            ' xmlns:dlna="urn:schemas-dlna-org:device-1-0"'
+            f' configId="{CONFIG_ID}">'
             "<specVersion><major>1</major><minor>0</minor></specVersion>"
             f"<URLBase>{escape(self.base_url)}/</URLBase>"
             "<device>"
@@ -183,7 +184,7 @@ class VirtualRenderer:
             "UPnP-to-Sonos-UPnP-bridge-for-Audirvana-</modelURL>"
             f"<serialNumber>{escape(self.zone.uid)}</serialNumber>"
             f"<UDN>{self.udn}</UDN>"
-            f"{icon_list_xml(self.device_path)}"
+            f"{icon_list_xml(self.device_path, self.icon_kind, self.stereo_pair)}"
             f"<serviceList>{''.join(services)}</serviceList>"
             f"<presentationURL>{escape(self.base_url)}/</presentationURL>"
             "</device></root>"

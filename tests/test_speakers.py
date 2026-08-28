@@ -115,6 +115,13 @@ def test_each_model_gets_a_different_picture():
     assert len(set(drawn.values())) == len(drawn)
 
 
+def test_the_fingerprint_changes_with_the_drawing():
+    stamps = {icon.token(kind) for kind in speakers.KINDS}
+    assert len(stamps) == len(speakers.KINDS)
+    assert icon.token("five") != icon.token("five", pair=True)
+    assert icon.token("five") == icon.token("five")  # and is stable
+
+
 def test_a_stereo_pair_looks_different_from_a_single_speaker():
     assert icon.render(48, "five") != icon.render(48, "five", pair=True)
 

@@ -9,6 +9,7 @@ arithmetic and :mod:`zlib`.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import struct
 import zlib
@@ -123,17 +124,34 @@ def render_for_model(size: int, model: str, pair: bool = False) -> bytes:
     return render(size, classify(model), pair)
 
 
-ICON_SIZES = (48, 120)
+#: UPnP asks for 48 and 120; control points that draw a large tile pick the
+#: biggest they are offered, and upscaling a 120px line drawing looks it.
+ICON_SIZES = (48, 120, 240, 512)
 
 
-def icon_list_xml(base_url: str) -> str:
+@lru_cache(maxsize=128)
+def token(kind: str = DEFAULT_KIND, pair: bool = False) -> str:
+    """A short fingerprint of a drawing, for the icon's URL.
+
+    Control points cache icons hard, and rightly so - but the URL used to stay
+    the same when the drawing behind it changed, which left them showing an old
+    icon indefinitely.  Putting the fingerprint in the path means a new drawing
+    is a new URL, so a cache can never shadow it.
+    """
+    outline = repr([[(round(x, 2), round(y, 2)) for x, y in path]
+                    for path in glyph(kind, pair)]).encode("utf-8")
+    return hashlib.blake2s(outline, digest_size=4).hexdigest()
+
+
+def icon_list_xml(base_url: str, kind: str = DEFAULT_KIND, pair: bool = False) -> str:
     """The ``<iconList>`` fragment for a device description document."""
+    stamp = token(kind, pair)
     parts = ["<iconList>"]
     for size in ICON_SIZES:
         parts.append(
             "<icon><mimetype>image/png</mimetype>"
-            f"<width>{size}</width><height>{size}</height><depth>24</depth>"
-            f"<url>{base_url}/icon/{size}.png</url></icon>"
+            f"<width>{size}</width><height>{size}</height><depth>32</depth>"
+            f"<url>{base_url}/icon/{stamp}/{size}.png</url></icon>"
         )
     parts.append("</iconList>")
     return "".join(parts)

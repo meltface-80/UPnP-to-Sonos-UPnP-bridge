@@ -53,6 +53,7 @@ def create_app(bridge) -> web.Application:
     app.router.add_get("/status.json", handle_status_json)
     app.router.add_get("/scpd/{name}.xml", handle_scpd)
     app.router.add_get("/dev/{uuid}/desc.xml", handle_description)
+    app.router.add_get("/dev/{uuid}/icon/{token}/{size}.png", handle_icon)
     app.router.add_get("/dev/{uuid}/icon/{size}.png", handle_icon)
     app.router.add_get("/dev/{uuid}/icon.svg", handle_icon_svg)
     app.router.add_post("/dev/{uuid}/svc/{service}/control", handle_control)
@@ -93,6 +94,15 @@ async def handle_scpd(request: web.Request) -> web.Response:
 
 
 async def handle_icon(request: web.Request) -> web.Response:
+    """The room's icon.
+
+    The path a description advertises carries a fingerprint of the drawing, so
+    a control point that cached one can never be shown a stale one.  The
+    fingerprint is not checked here: a client still holding an older
+    description asks for the old path and gets the current drawing, rather than
+    a 404.  That unfingerprinted path is only cached briefly, so such a client
+    recovers on its own.
+    """
     renderer = _renderer(request)
     try:
         size = int(request.match_info["size"])
@@ -100,9 +110,11 @@ async def handle_icon(request: web.Request) -> web.Response:
         raise web.HTTPNotFound(text="Unknown icon") from exc
     if size not in ICON_SIZES:
         raise web.HTTPNotFound(text="Unknown icon size")
+    stamped = "token" in request.match_info
+    cache = "max-age=86400, immutable" if stamped else "max-age=300"
     return web.Response(
         body=render_icon(size, renderer.icon_kind, renderer.stereo_pair),
-        headers={"Content-Type": "image/png", "Cache-Control": "max-age=86400"},
+        headers={"Content-Type": "image/png", "Cache-Control": cache},
     )
 
 
