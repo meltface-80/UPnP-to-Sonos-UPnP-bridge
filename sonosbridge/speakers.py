@@ -1,23 +1,25 @@
-"""Minimalist line-art glyphs for the Sonos models the bridge can bridge.
+"""Line drawings of the Sonos models the bridge can bridge.
 
-Every model is described once, as a handful of rounded polygons in a 100x100
-box.  Both renderers work from that single description: :mod:`sonosbridge.icon`
+The shapes themselves come from :mod:`sonosbridge.deviceicons`, where each
+cabinet is described by its real size and drawn in three-quarter view, so a
+Five is recognisably a Five and not just a wide box.  This module scales those
+outlines into the 100x100 box the rest of the bridge works in, matches a
+reported model name to one of them, and lays two side by side for a room that
+is a bonded stereo pair.
+
+Both renderers work from the single description: :mod:`sonosbridge.icon`
 rasterises it into the PNG that UPnP control points ask for, and :func:`svg`
 emits the same outline for the status page or any other UI.  Nothing here needs
 a drawing library, and there are no binary assets to keep in sync.
-
-The shapes are deliberately schematic - a Five is a wide box, a Beam is a
-rounded bar, a Sub is a slab with a hole - because at 48 pixels the silhouette
-is the only thing that survives.  A stereo pair is drawn as two smaller copies
-side by side.
 """
 
 from __future__ import annotations
 
-import math
 import re
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from functools import lru_cache
+
+from . import deviceicons
 
 Point = tuple[float, float]
 Path = tuple[Point, ...]
@@ -27,190 +29,21 @@ VIEWBOX = 100.0
 
 
 # ----------------------------------------------------------------------
-# Geometry helpers
+# The models
 # ----------------------------------------------------------------------
-def _arc_points(cx: float, cy: float, r: float, start: float, end: float, steps: int) -> list[Point]:
-    span = end - start
+def _outline(kind: str) -> list[Path]:
+    """A device's outlines, scaled from the drawing grid into the 100x100 box."""
+    scale = VIEWBOX / deviceicons.VIEW
     return [
-        (cx + r * math.cos(start + span * i / steps), cy + r * math.sin(start + span * i / steps))
-        for i in range(steps + 1)
+        tuple((x * scale, y * scale) for x, y in run)
+        for run in deviceicons.polylines(kind)
     ]
 
 
-def circle(cx: float, cy: float, r: float, steps: int = 40) -> Path:
-    return tuple(_arc_points(cx, cy, r, 0.0, math.tau, steps))
+KINDS: tuple[str, ...] = deviceicons.ICON_NAMES
 
+DEFAULT_KIND = deviceicons.FALLBACK
 
-def line(x1: float, y1: float, x2: float, y2: float) -> Path:
-    return ((x1, y1), (x2, y2))
-
-
-def poly(points: Sequence[Point], radii: float | Sequence[float], steps: int = 6) -> Path:
-    """A closed polygon with rounded corners, sampled into a polyline.
-
-    Concave corners round just as happily as convex ones, which is what gives
-    the Era 300 its waist and the Era 100 its dipped top.
-    """
-    count = len(points)
-    if isinstance(radii, int | float):
-        radii = [float(radii)] * count
-    out: list[Point] = []
-    for index, point in enumerate(points):
-        before = points[index - 1]
-        after = points[(index + 1) % count]
-        to_before = (before[0] - point[0], before[1] - point[1])
-        to_after = (after[0] - point[0], after[1] - point[1])
-        len_before = math.hypot(*to_before)
-        len_after = math.hypot(*to_after)
-        if len_before < 1e-9 or len_after < 1e-9:
-            out.append(point)
-            continue
-        u1 = (to_before[0] / len_before, to_before[1] / len_before)
-        u2 = (to_after[0] / len_after, to_after[1] / len_after)
-        angle = math.acos(max(-1.0, min(1.0, u1[0] * u2[0] + u1[1] * u2[1])))
-        if angle < 1e-6 or abs(angle - math.pi) < 1e-6:
-            out.append(point)  # a straight-through vertex needs no arc
-            continue
-        half = math.tan(angle / 2.0)
-        radius = min(radii[index], len_before / 2.0 * half, len_after / 2.0 * half)
-        tangent = radius / half
-        start_point = (point[0] + u1[0] * tangent, point[1] + u1[1] * tangent)
-        end_point = (point[0] + u2[0] * tangent, point[1] + u2[1] * tangent)
-        bisector = (u1[0] + u2[0], u1[1] + u2[1])
-        length = math.hypot(*bisector)
-        if length < 1e-9 or radius < 1e-9:
-            out.append(point)
-            continue
-        distance = radius / math.sin(angle / 2.0)
-        centre = (point[0] + bisector[0] / length * distance,
-                  point[1] + bisector[1] / length * distance)
-        a1 = math.atan2(start_point[1] - centre[1], start_point[0] - centre[0])
-        a2 = math.atan2(end_point[1] - centre[1], end_point[0] - centre[0])
-        sweep = (a2 - a1 + math.pi) % math.tau - math.pi  # the short way round
-        out.extend(_arc_points(centre[0], centre[1], radius, a1, a1 + sweep, steps))
-    out.append(out[0])
-    return tuple(out)
-
-
-def rrect(x: float, y: float, w: float, h: float, r: float) -> Path:
-    return poly(((x, y), (x + w, y), (x + w, y + h), (x, y + h)), r)
-
-
-# ----------------------------------------------------------------------
-# The models
-# ----------------------------------------------------------------------
-def _generic() -> list[Path]:
-    return [rrect(25, 17, 50, 66, 10), circle(50, 41, 12), circle(50, 67, 5)]
-
-
-def _five() -> list[Path]:
-    return [rrect(9, 31, 82, 38, 8)]
-
-
-def _play3() -> list[Path]:
-    return [rrect(19, 33, 62, 34, 7)]
-
-
-def _one() -> list[Path]:
-    return [rrect(33, 16, 34, 68, 9)]
-
-
-def _play1() -> list[Path]:
-    # The same body as a One, with the Play:1's slight taper towards the top.
-    return [poly(((36, 16), (64, 16), (67, 84), (33, 84)), (8, 8, 7, 7))]
-
-
-def _era100() -> list[Path]:
-    # Taller and rounder than a One - the body is an oval cylinder.
-    return [rrect(35, 15, 30, 70, 14)]
-
-
-def _era300() -> list[Path]:
-    # The cinched, hourglass body - the most recognisable shape in the range.
-    return [poly(((14, 28), (86, 28), (78, 51), (86, 74), (14, 74), (22, 51)),
-                 (12, 12, 10, 12, 12, 10))]
-
-
-def _beam() -> list[Path]:
-    return [rrect(14, 40, 72, 20, 10)]
-
-
-def _arc_bar() -> list[Path]:
-    return [rrect(5, 43, 90, 13, 6.5)]
-
-
-def _ray() -> list[Path]:
-    return [rrect(17, 41, 66, 18, 5)]
-
-
-def _playbar() -> list[Path]:
-    return [rrect(8, 39, 84, 22, 4), line(20, 44, 20, 56), line(80, 44, 80, 56)]
-
-
-def _playbase() -> list[Path]:
-    # A plinth for the television to stand on: flat, and flared towards the floor.
-    return [poly(((12, 41), (88, 41), (94, 60), (6, 60)), 5)]
-
-
-def _move() -> list[Path]:
-    return [poly(((35, 14), (65, 14), (69, 86), (31, 86)), (13, 13, 7, 7))]
-
-
-def _roam() -> list[Path]:
-    return [poly(((41, 21), (59, 21), (63, 83), (37, 83)), (8, 8, 6, 6))]
-
-
-def _sub() -> list[Path]:
-    return [rrect(19, 15, 62, 70, 14), rrect(41, 33, 18, 34, 9)]
-
-
-def _submini() -> list[Path]:
-    return [rrect(31, 15, 38, 70, 19), circle(50, 50, 11)]
-
-
-def _amp() -> list[Path]:
-    return [rrect(11, 33, 78, 34, 5), circle(72, 50, 8)]
-
-
-def _port() -> list[Path]:
-    return [rrect(24, 38, 52, 24, 4), circle(63, 50, 3.6)]
-
-
-def _bookshelf() -> list[Path]:
-    return [rrect(23, 22, 54, 56, 4)]
-
-
-def _lamp() -> list[Path]:
-    return [poly(((38, 13), (62, 13), (73, 41), (27, 41)), 5), rrect(37, 41, 26, 45, 7)]
-
-
-def _frame() -> list[Path]:
-    return [rrect(22, 18, 56, 64, 3), rrect(29, 25, 42, 50, 2)]
-
-
-_BUILDERS: dict[str, Callable[[], list[Path]]] = {
-    "five": _five,
-    "play3": _play3,
-    "one": _one,
-    "play1": _play1,
-    "era100": _era100,
-    "era300": _era300,
-    "beam": _beam,
-    "arc": _arc_bar,
-    "ray": _ray,
-    "playbar": _playbar,
-    "playbase": _playbase,
-    "move": _move,
-    "roam": _roam,
-    "sub": _sub,
-    "submini": _submini,
-    "amp": _amp,
-    "port": _port,
-    "bookshelf": _bookshelf,
-    "lamp": _lamp,
-    "frame": _frame,
-    "generic": _generic,
-}
 
 #: Human-readable name for each glyph, used by the status page and the docs.
 LABELS: dict[str, str] = {
@@ -236,11 +69,6 @@ LABELS: dict[str, str] = {
     "frame": "Symfonisk picture frame",
     "generic": "Sonos player",
 }
-
-KINDS: tuple[str, ...] = tuple(_BUILDERS)
-
-DEFAULT_KIND = "generic"
-
 
 # ----------------------------------------------------------------------
 # Matching a model name to a glyph
@@ -346,7 +174,7 @@ def _as_pair(paths: Sequence[Path]) -> list[Path]:
 @lru_cache(maxsize=128)
 def glyph(kind: str = DEFAULT_KIND, pair: bool = False) -> tuple[Path, ...]:
     """The outline for *kind*, in a 100x100 box.  ``pair=True`` draws two."""
-    paths = _BUILDERS.get(kind, _BUILDERS[DEFAULT_KIND])()
+    paths = _outline(kind if kind in KINDS else DEFAULT_KIND)
     return tuple(_as_pair(paths) if pair else paths)
 
 
@@ -366,7 +194,7 @@ def svg(
     pair: bool = False,
     size: int = 64,
     colour: str = "currentColor",
-    stroke: float = 5.0,
+    stroke: float = 3.4,
     title: str = "",
     auto_theme: bool = False,
 ) -> str:

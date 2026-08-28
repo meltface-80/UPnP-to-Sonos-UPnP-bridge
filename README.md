@@ -4,7 +4,7 @@
 
 </div>
 
-# UPnP to Sonos UPnP bridge for Audirvana - v1.0.0
+# UPnP to Sonos UPnP bridge for Audirvana - v1.0.1
 
 **📖 Install guide & docs: [meltface-80.github.io/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-](https://meltface-80.github.io/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-/)**
 
@@ -81,10 +81,10 @@ server, so there is no extra hop and no transcoding.
 
 ## Device icons
 
-Control points show an icon beside each device, so every room gets a minimalist line drawing of
-the speaker it actually is: a Five is a wide box, an Era 300 is cinched at the waist, a Beam is a
-rounded bar, a Sub is a slab with a hole through it. **A room that is a bonded stereo pair is
-drawn as two speakers**, which makes a paired room obvious at a glance in a device list.
+Control points show an icon beside each device, so every room gets a line drawing of the speaker
+it actually is, seen in three-quarter view: an Era 300 keeps its cinched waist, a Sub the port cut
+through it, a soundbar its length, a Move its charging base. **A room that is a bonded stereo pair
+is drawn as two speakers**, which makes a paired room obvious at a glance in a device list.
 
 | | |
 | --- | --- |
@@ -95,8 +95,9 @@ drawn as two speakers**, which makes a paired room obvious at a glance in a devi
 | Symfonisk bookshelf, lamp, picture frame | anything else: a generic speaker |
 
 The model is read from the player's own description document, so nothing needs configuring.
-Each glyph is described once as a set of rounded outlines and drawn from arithmetic at start-up -
-there are no image files in the repository - then served as PNG for UPnP
+Each cabinet is described once by its real width, depth and height and flattened through one
+shared projection at start-up - there are no image files in the repository - then served as PNG
+for UPnP
 (`/dev/<uuid>/icon/48.png`, `/dev/<uuid>/icon/120.png`) and as SVG at `/dev/<uuid>/icon.svg` for
 control points and dashboards that would rather scale it. The bridge's own status page shows the
 same icons next to your rooms.

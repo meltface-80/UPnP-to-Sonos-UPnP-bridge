@@ -1,8 +1,8 @@
 """Device icons, drawn at start-up rather than shipped as binary assets.
 
 Control points (Audirvana included) show the renderer's icon next to its name.
-Each bridged room gets the line-art glyph for its own model - a Five looks like
-a Five, a Beam like a Beam, a stereo pair like two of them - drawn from the
+Each bridged room gets the line drawing of its own model - a Five looks like a
+Five, a Beam like a Beam, a stereo pair like two of them - taken from the
 outlines in :mod:`sonosbridge.speakers` and encoded as a PNG with nothing but
 arithmetic and :mod:`zlib`.
 """
@@ -21,9 +21,10 @@ BACKGROUND = (24, 26, 31)
 FOREGROUND = (240, 242, 245)
 
 #: Stroke weight as a fraction of the icon's edge, with a floor so the smallest
-#: icon still has a visible line.
-STROKE_RATIO = 0.055
-MIN_STROKE = 1.6
+#: icon still has a visible line.  The drawings are three-quarter views with
+#: real line work in them, so they want a finer stroke than a flat glyph would.
+STROKE_RATIO = 0.040
+MIN_STROKE = 1.5
 
 
 def _chunk(kind: bytes, payload: bytes) -> bytes:
