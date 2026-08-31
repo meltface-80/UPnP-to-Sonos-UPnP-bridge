@@ -1,344 +1,332 @@
 """Device drawings for every Sonos model the bridge knows about.
 
-Each speaker is described by the size of its cabinet - width across the front,
-depth back, height - and flattened through one shared oblique projection, so
-the whole set is drawn from the same viewpoint with the same horizon.  The
-result is a handful of outlines on a 32 x 32 grid, which :mod:`sonosbridge.icon`
-rasterises and ``tools/gen_device_icons.py`` writes out as an SVG sprite.
+Each speaker is described as the face you look at plus the depth it stands in,
+and folded back through one shared three-quarter projection, so the whole set
+is drawn from the same viewpoint: a Five is a wide cabinet, an Era 300 keeps
+its cinched waist, a Sub the slot cut through it, a soundbar its length.  Only
+the edges you could actually see are stroked.
+
+The shapes are composed in a generous square and then fitted to a 32 x 32 grid,
+which :mod:`sonosbridge.icon` rasterises into the PNGs served over UPnP and
+``tools/gen_device_icons.py`` writes out as an SVG sprite.  Nothing here needs a
+drawing library, and there are no binary assets to keep in sync.
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from functools import cache
 
-# Depth recedes up and to the left, foreshortened - a three-quarter view from
-# slightly above, the way hardware is drawn in a device picker.
-KX, KY = -0.30, -0.23
+Point = tuple[float, float]
+Path = tuple[Point, ...]
+
 VIEW = 32.0          # the drawings sit on a VIEW x VIEW grid
 MARGIN = 2.0
-K = 0.5523           # circle-to-bezier constant
-
-YAW = 0.0            # per-device turn about the vertical axis, in radians
-
-
-def set_yaw(degrees):
-    """Turn a device on the spot. Long bars need it or they collapse to a line."""
-    global YAW
-    YAW = math.radians(degrees)
-
-
-def P(x, y, z):
-    """Project an object-space point to the drawing plane."""
-    if YAW:
-        c, s = math.cos(YAW), math.sin(YAW)
-        x, y = x * c - y * s, x * s + y * c
-    return (x + KX * y, -z + KY * y)
-
-
-class Path:
-    def __init__(self):
-        self.segs = []
-
-    def M(self, p):
-        self.segs.append(("M", [p]))
-        return self
-
-    def L(self, p):
-        self.segs.append(("L", [p]))
-        return self
-
-    def C(self, a, b, c):
-        self.segs.append(("C", [a, b, c]))
-        return self
-
-    def Z(self):
-        self.segs.append(("Z", []))
-        return self
-
-    def points(self):
-        return [p for _, pts in self.segs for p in pts]
-
-    def render(self):
-        out = []
-        for kind, pts in self.segs:
-            if kind == "Z":
-                out.append("Z")
-                continue
-            coords = " ".join(f"{a:.2f} {b:.2f}" for a, b in pts)
-            out.append(f"{kind}{coords}")
-        return "".join(out)
-
-
-def seg(p1, p2):
-    return Path().M(p1).L(p2)
-
-
-def poly(*pts, close=True):
-    p = Path().M(pts[0])
-    for q in pts[1:]:
-        p.L(q)
-    return p.Z() if close else p
-
-
-def box(w, d, h, org=(0.0, 0.0, 0.0)):
-    """Silhouette plus the three interior edges of a rectangular volume."""
-    ox, oy, oz = org
-
-    def q(x, y, z):
-        return P(ox + x, oy + y, oz + z)
-
-    A, B, C = q(0, 0, 0), q(w, 0, 0), q(w, 0, h)
-    D, E, F, G = q(0, 0, h), q(0, d, h), q(w, d, h), q(0, d, 0)
-    return [poly(A, B, C, F, E, G), seg(D, A), seg(D, C), seg(D, E)]
-
-
-def ring(cx, cy, z, rx, ry, t0=0.0, t1=2 * math.pi):
-    """Bezier arc of an axis-aligned ellipse lying flat at height *z*."""
-    p = Path()
-    steps = max(1, int(math.ceil(abs(t1 - t0) / (math.pi / 2) - 1e-9)))
-    step = (t1 - t0) / steps
-    a = K * 4 / 3 * math.tan(step / 4)
-
-    def pos(t):
-        return P(cx + rx * math.cos(t), cy + ry * math.sin(t), z)
-
-    def tan(t):
-        return (-rx * math.sin(t), ry * math.cos(t))
-
-    p.M(pos(t0))
-    for i in range(steps):
-        start, end = t0 + i * step, t0 + (i + 1) * step
-        tsx, tsy = tan(start)
-        tex, tey = tan(end)
-        c1 = P(cx + rx * math.cos(start) + a * tsx, cy + ry * math.sin(start) + a * tsy, z)
-        c2 = P(cx + rx * math.cos(end) - a * tex, cy + ry * math.sin(end) - a * tey, z)
-        p.C(c1, c2, pos(end))
-    return p
-
-
-def silhouette_angle(rx, ry):
-    """Parameter angle where the projected ellipse reaches its extreme x."""
-    return math.atan2(KX * ry, rx)
-
-
-def cylinder(rx, ry, h, cx=0.0, cy=0.0, lid=None):
-    """Upright cylinder: full top ellipse, two silhouette edges, front floor."""
-    t = silhouette_angle(rx, ry)
-    left, right = t + math.pi, t
-    parts = [ring(cx, cy, h, rx, ry)]
-    for ang in (left, right):
-        top = P(cx + rx * math.cos(ang), cy + ry * math.sin(ang), h)
-        bot = P(cx + rx * math.cos(ang), cy + ry * math.sin(ang), 0)
-        parts.append(seg(top, bot))
-    # Floor: the near half only, swept the short way round the front.
-    parts.append(ring(cx, cy, 0, rx, ry, left, right + 2 * math.pi))
-    if lid:
-        parts.append(ring(cx, cy, h, rx * lid, ry * lid))
-    return parts
-
-
-def taper(rx0, ry0, rx1, ry1, h, z0=0.0, lid=None, floor=True):
-    """Cylinder whose footprint shrinks with height (Move)."""
-    t0, t1 = silhouette_angle(rx0, ry0), silhouette_angle(rx1, ry1)
-    parts = [ring(0, 0, z0 + h, rx1, ry1)]
-    for a0, a1 in ((t0 + math.pi, t1 + math.pi), (t0, t1)):
-        parts.append(seg(P(rx0 * math.cos(a0), ry0 * math.sin(a0), z0),
-                         P(rx1 * math.cos(a1), ry1 * math.sin(a1), z0 + h)))
-    if floor:
-        parts.append(ring(0, 0, z0, rx0, ry0, t0 + math.pi, t0 + 2 * math.pi))
-    if lid:
-        parts.append(ring(0, 0, z0 + h, rx1 * lid, ry1 * lid))
-    return parts
-
-
-def face_rect(x0, x1, z0, z1, y=0.0, r=0.0):
-    """Rectangle drawn on the front plane, optionally with rounded corners."""
-    if not r:
-        return poly(P(x0, y, z0), P(x1, y, z0), P(x1, y, z1), P(x0, y, z1))
-    p = Path().M(P(x0 + r, y, z0))
-    corners = [((x1 - r, z0), (x1, z0), (x1, z0 + r)),
-               ((x1, z1 - r), (x1, z1), (x1 - r, z1)),
-               ((x0 + r, z1), (x0, z1), (x0, z1 - r)),
-               ((x0, z0 + r), (x0, z0), (x0 + r, z0))]
-    for (lx, lz), (cxp, czp), (nx, nz) in corners:
-        p.L(P(lx, y, lz))
-        c1 = P(lx + (cxp - lx) * K, y, lz + (czp - lz) * K)
-        c2 = P(nx + (cxp - nx) * K, y, nz + (czp - nz) * K)
-        p.C(c1, c2, P(nx, y, nz))
-    return p.Z()
-
-
-def face_circle(cx, cz, r, y=0.0):
-    p = Path()
-    pts = [(cx + r, cz), (cx, cz + r), (cx - r, cz), (cx, cz - r)]
-    p.M(P(pts[0][0], y, pts[0][1]))
-    for i in range(4):
-        (ax, az), (bx, bz) = pts[i], pts[(i + 1) % 4]
-        # Tangents run vertical at the sides, horizontal at top and bottom.
-        if i % 2 == 0:
-            c1 = P(ax, y, az + K * r * (1 if i == 0 else -1))
-            c2 = P(bx + K * r * (1 if i == 0 else -1), y, bz)
-        else:
-            c1 = P(ax + K * r * (-1 if i == 1 else 1), y, az)
-            c2 = P(bx, y, bz + K * r * (1 if i == 1 else -1))
-        p.C(c1, c2, P(bx, y, bz))
-    return p.Z()
-
-
-
-def tri_bar(length, half_depth, height):
-    """Triangular-section bar lying on its side (Roam)."""
-    def sec(x):
-        return P(x, -half_depth, 0), P(x, half_depth, 0), P(x, 0, height)
-    a0, b0, c0 = sec(0.0)
-    a1, b1, c1 = sec(length)
-    return [poly(a0, b0, c0), poly(a1, c1, b1, close=False),
-            seg(a0, a1), seg(b0, b1), seg(c0, c1)]
-
-
-def feet(w, d, h=0.0, drop=0.9):
-    """The little legs Sonos components stand on."""
-    return [seg(P(x, y, h), P(x, y, h - drop))
-            for x, y in ((0, 0), (w, 0), (0, d))]
+DESIGN = 100.0       # ...but are composed in this larger square first
 
 
 # ----------------------------------------------------------------------
-# The devices, in centimetres: width across the front, depth back, height.
+# Geometry helpers
+#
+# Depth recedes up and to the right, foreshortened - a three-quarter view from
+# slightly above, the way hardware is drawn in a device picker.
 # ----------------------------------------------------------------------
-def d_one():
-    return cylinder(6.2, 6.2, 14.6, lid=0.70)
+DEPTH = (0.80, 0.52)
 
 
-def d_era100():
-    parts = cylinder(6.0, 6.6, 20.0, lid=0.66)
-    parts.append(ring(0, 0, 19.0, 6.0 * 0.44, 6.6 * 0.44))   # dished top
-    return parts
+def _arc_points(cx: float, cy: float, rx: float, ry: float,
+                start: float, end: float, steps: int) -> list[Point]:
+    span = end - start
+    return [
+        (cx + rx * math.cos(start + span * i / steps),
+         cy + ry * math.sin(start + span * i / steps))
+        for i in range(steps + 1)
+    ]
 
 
-def d_era300():
-    """The pinched waist, built as three stacked footprints."""
-    rx_t, ry_t, rx_w, ry_w, rx_b, ry_b, h = 13.0, 9.0, 8.2, 5.7, 11.0, 7.6, 16.0
-    tt, tw, tb = (silhouette_angle(rx_t, ry_t), silhouette_angle(rx_w, ry_w),
-                  silhouette_angle(rx_b, ry_b))
-    parts = [ring(0, 0, h, rx_t, ry_t)]
-    for off in (math.pi, 0.0):
-        top = P(rx_t * math.cos(tt + off), ry_t * math.sin(tt + off), h)
-        mid = P(rx_w * math.cos(tw + off), ry_w * math.sin(tw + off), h * 0.5)
-        bot = P(rx_b * math.cos(tb + off), ry_b * math.sin(tb + off), 0)
-        p = Path().M(top)
-        p.C((top[0] + (mid[0] - top[0]) * 0.9, top[1] + (mid[1] - top[1]) * 0.55),
-            (mid[0], mid[1] - (mid[1] - top[1]) * 0.45), mid)
-        p.C((mid[0], mid[1] + (bot[1] - mid[1]) * 0.45),
-            (bot[0] + (mid[0] - bot[0]) * 0.9, bot[1] + (mid[1] - bot[1]) * 0.55), bot)
-        parts.append(p)
-    parts.append(ring(0, 0, 0, rx_b, ry_b, tb + math.pi, tb + 2 * math.pi))
-    return parts
+def circle(cx: float, cy: float, r: float, steps: int = 40) -> Path:
+    return tuple(_arc_points(cx, cy, r, r, 0.0, math.tau, steps))
 
 
-def d_five():
-    w, d, h = 36.4, 15.4, 20.3
-    return box(w, d, h) + [seg(P(w * 0.32, d * 0.26, h), P(w * 0.68, d * 0.26, h))]
+def ellipse(cx: float, cy: float, rx: float, ry: float, steps: int = 48) -> Path:
+    return tuple(_arc_points(cx, cy, rx, ry, 0.0, math.tau, steps))
 
 
-def d_play3():
-    w, d, h = 26.8, 13.2, 13.2
-    return box(w, d, h) + [seg(P(w * 0.42, 0, h * 0.22), P(w * 0.58, 0, h * 0.22))]
+def ellipse_arc(cx: float, cy: float, rx: float, ry: float,
+                start: float, end: float, steps: int = 24) -> Path:
+    return tuple(_arc_points(cx, cy, rx, ry, start, end, steps))
 
 
-def _bar(w, d, h, bevel=0.30):
-    return box(w, d, h) + [seg(P(0, 0, h * (1 - bevel)), P(w, 0, h * (1 - bevel)))]
+def line(x1: float, y1: float, x2: float, y2: float) -> Path:
+    return ((x1, y1), (x2, y2))
 
 
-def d_arc():
-    set_yaw(34)
-    return _bar(114.0, 11.6, 8.7, 0.34)
+def _round_corners(points: Sequence[Point], radii: float | Sequence[float],
+                   closed: bool, steps: int) -> Path:
+    """Sample a polygon or polyline into a polyline with rounded corners.
+
+    Concave corners round just as happily as convex ones, which is what gives
+    the Era 300 its waist.  On an open path the two ends are left alone.
+    """
+    count = len(points)
+    if isinstance(radii, int | float):
+        radii = [float(radii)] * count
+    out: list[Point] = []
+    for index, point in enumerate(points):
+        if not closed and index in (0, count - 1):
+            out.append(point)
+            continue
+        before = points[index - 1]
+        after = points[(index + 1) % count]
+        to_before = (before[0] - point[0], before[1] - point[1])
+        to_after = (after[0] - point[0], after[1] - point[1])
+        len_before = math.hypot(*to_before)
+        len_after = math.hypot(*to_after)
+        if len_before < 1e-9 or len_after < 1e-9:
+            out.append(point)
+            continue
+        u1 = (to_before[0] / len_before, to_before[1] / len_before)
+        u2 = (to_after[0] / len_after, to_after[1] / len_after)
+        angle = math.acos(max(-1.0, min(1.0, u1[0] * u2[0] + u1[1] * u2[1])))
+        if angle < 1e-6 or abs(angle - math.pi) < 1e-6:
+            out.append(point)  # a straight-through vertex needs no arc
+            continue
+        half = math.tan(angle / 2.0)
+        radius = min(radii[index], len_before / 2.0 * half, len_after / 2.0 * half)
+        if radius < 1e-9:
+            out.append(point)
+            continue
+        tangent = radius / half
+        start_point = (point[0] + u1[0] * tangent, point[1] + u1[1] * tangent)
+        end_point = (point[0] + u2[0] * tangent, point[1] + u2[1] * tangent)
+        bisector = (u1[0] + u2[0], u1[1] + u2[1])
+        length = math.hypot(*bisector)
+        if length < 1e-9:
+            out.append(point)
+            continue
+        distance = radius / math.sin(angle / 2.0)
+        centre = (point[0] + bisector[0] / length * distance,
+                  point[1] + bisector[1] / length * distance)
+        a1 = math.atan2(start_point[1] - centre[1], start_point[0] - centre[0])
+        a2 = math.atan2(end_point[1] - centre[1], end_point[0] - centre[0])
+        sweep = (a2 - a1 + math.pi) % math.tau - math.pi  # the short way round
+        out.extend(_arc_points(centre[0], centre[1], radius, radius, a1, a1 + sweep, steps))
+    if closed:
+        out.append(out[0])
+    return tuple(out)
 
 
-def d_beam():
-    set_yaw(30)
-    return _bar(65.0, 10.0, 6.9, 0.32)
+def poly(points: Sequence[Point], radii: float | Sequence[float], steps: int = 6) -> Path:
+    """A closed polygon with rounded corners."""
+    return _round_corners(points, radii, closed=True, steps=steps)
 
 
-def d_ray():
-    set_yaw(26)
-    return box(56.0, 7.1, 9.5)
+def polyline(points: Sequence[Point], radii: float | Sequence[float] = 0.0,
+             steps: int = 5) -> Path:
+    """An open path with rounded joins - used for the folded-back faces."""
+    return _round_corners(points, radii, closed=False, steps=steps)
 
 
-def d_playbar():
-    set_yaw(32)
-    w, d, h = 90.0, 14.0, 8.5
-    return _bar(w, d, h, 0.38) + [seg(P(w * 0.5, 0, 0), P(w * 0.5, 0, h * 0.62))]
+def rrect(x: float, y: float, w: float, h: float, r: float) -> Path:
+    return poly(((x, y), (x + w, y), (x + w, y + h), (x, y + h)), r)
 
 
-def d_playbase():
-    set_yaw(16)
-    w, d, h = 72.0, 38.0, 5.8
-    inset = [P(w * 0.08, d * 0.14, h), P(w * 0.92, d * 0.14, h),
-             P(w * 0.92, d * 0.86, h), P(w * 0.08, d * 0.86, h)]
-    return box(w, d, h) + [poly(*inset)]
+def _unit_depth() -> Point:
+    length = math.hypot(*DEPTH)
+    return (DEPTH[0] / length, -DEPTH[1] / length)
 
 
-def d_sub():
-    w, d, h = 15.8, 38.9, 40.2
-    hx0, hx1, hz0, hz1 = w * 0.20, w * 0.80, h * 0.28, h * 0.72
-    r = (hx1 - hx0) / 2
-    return box(w, d, h) + [face_rect(hx0, hx1, hz0, hz1, r=r)]
+def extrude(front: Path, depth: float) -> list[Path]:
+    """Give a flat outline a body, by folding it back away from the viewer.
+
+    Only the edges you could actually see are drawn: the front outline (which
+    the caller already has), the part of the back outline that clears it, and
+    the two lines joining them.  Which part of the back clears the front falls
+    out of the geometry - an edge is visible when its outward normal leans away
+    from the viewer.
+    """
+    ux, uy = _unit_depth()
+    points = list(front[:-1]) if front[0] == front[-1] else list(front)
+    count = len(points)
+    if count < 3 or depth <= 0:
+        return []
+
+    def faces_away(index: int) -> bool:
+        ax, ay = points[index]
+        bx, by = points[(index + 1) % count]
+        # For a path drawn clockwise on screen the outward normal is (dy, -dx).
+        return (by - ay) * ux + (ax - bx) * uy > 0
+
+    visible = [faces_away(i) for i in range(count)]
+    if all(visible) or not any(visible):
+        return []
+
+    # A waisted shape such as the Era 300 turns away from the viewer and back
+    # again, so collect every visible run, not just the first.
+    paths: list[Path] = []
+    for start in (i for i in range(count) if visible[i] and not visible[i - 1]):
+        run = [points[start]]
+        index = start
+        while visible[index]:
+            index = (index + 1) % count
+            run.append(points[index])
+        back = tuple((x + ux * depth, y + uy * depth) for x, y in run)
+        paths.append(back)
+        paths.append(line(run[0][0], run[0][1], back[0][0], back[0][1]))
+        paths.append(line(run[-1][0], run[-1][1], back[-1][0], back[-1][1]))
+    return paths
 
 
-def d_submini():
-    r, h = 11.5, 30.5
-    return cylinder(r, r, h) + [face_circle(0.0, h * 0.52, r * 0.42, y=-r * 0.55)]
+def box(corners: Sequence[Point], depth: float, radius: float = 3.0) -> list[Path]:
+    """A cabinet in three-quarter view.
+
+    *corners* are the front face, clockwise from the top left.
+    """
+    front = poly(corners, radius)
+    return [front, *extrude(front, depth)]
 
 
-def d_move():
-    """Body on its charging base - the cue that says portable."""
-    return (cylinder(8.4, 6.9, 1.4)
-            + taper(7.5, 6.2, 6.8, 5.6, 22.0, z0=1.4, lid=0.74, floor=False))
+def upright(x: float, y: float, w: float, h: float, depth: float,
+            radius: float = 3.0, taper: float = 0.0) -> list[Path]:
+    """A box standing on the floor, optionally narrower at the top."""
+    return box(
+        ((x + taper, y), (x + w - taper, y), (x + w, y + h), (x, y + h)),
+        depth,
+        radius,
+    )
 
 
-def d_roam():
-    set_yaw(30)
-    return tri_bar(16.8, 3.1, 6.2)
+def cylinder(cx: float, y: float, rx: float, ry: float, h: float) -> list[Path]:
+    """A drum seen slightly from above: a full top ellipse and a front skirt."""
+    return [
+        ellipse(cx, y + ry, rx, ry),
+        polyline(((cx - rx, y + ry), (cx - rx, y + h - ry))),
+        polyline(((cx + rx, y + ry), (cx + rx, y + h - ry))),
+        ellipse_arc(cx, y + h - ry, rx, ry, 0.0, math.pi),
+    ]
 
 
-def d_amp():
-    w, d, h = 21.7, 21.7, 6.4
-    return (box(w, d, h) + feet(w, d)
-            + [face_circle(w * 0.74, h * 0.5, h * 0.28)])
+# ----------------------------------------------------------------------
+# The models
+#
+# Sizes are relative, not literal: an Arc is drawn longer than a Beam because
+# it is longer, but a Roam is not drawn as the thumbnail its real size would
+# make it.  Each glyph is centred in the 100x100 box when it is handed out.
+# ----------------------------------------------------------------------
+def d_generic() -> list[Path]:
+    paths = upright(28, 22, 40, 54, 12, 4)
+    paths.append(circle(48, 40, 10))
+    paths.append(circle(48, 62, 4.5))
+    return paths
 
 
-def d_port():
-    w, d, h = 13.8, 13.8, 4.4
-    return (box(w, d, h) + feet(w, d, drop=0.7)
-            + [face_rect(w * 0.44, w * 0.56, h * 0.24, h * 0.76, r=w * 0.05)])
+def d_five() -> list[Path]:
+    # The widest box in the range, lying on its long edge.
+    return upright(8, 40, 68, 30, 15, 4)
 
 
-def d_play1():
-    """Same body as a One, with the Play:1's slight taper towards the top."""
-    return taper(6.4, 6.4, 6.0, 6.0, 14.6, lid=0.70)
+def d_play3() -> list[Path]:
+    return upright(14, 40, 56, 28, 14, 5)
 
 
-def d_bookshelf():
-    """SYMFONISK bookshelf: a plain box, fabric front, no controls to speak of."""
-    return box(31.0, 10.0, 20.0)
+def d_one() -> list[Path]:
+    return upright(30, 22, 30, 52, 13, 5)
 
 
-def d_lamp():
-    """SYMFONISK lamp: a shade sitting on the glass cylinder that holds the driver."""
-    return (cylinder(6.4, 6.4, 17.0)
-            + taper(10.4, 10.4, 8.6, 8.6, 12.0, z0=17.0, floor=True))
+def d_play1() -> list[Path]:
+    # The same footprint as a One, tapering in towards the top.
+    return upright(30, 24, 30, 50, 13, 5, taper=2)
 
 
-def d_frame():
-    """SYMFONISK picture frame: a thin panel, hung flat against the wall."""
-    w, d, h = 41.0, 6.0, 27.0
-    return box(w, d, h) + [face_rect(w * 0.10, w * 0.90, h * 0.11, h * 0.89)]
+def d_era100() -> list[Path]:
+    # An oval drum rather than a box.
+    return cylinder(48, 20, 15, 6, 56)
 
 
-def d_generic():
-    w, d, h = 20.0, 14.0, 15.0
-    return box(w, d, h) + [face_circle(w * 0.5, h * 0.5, h * 0.28)]
+def d_era300() -> list[Path]:
+    # Cinched at the waist - the most recognisable shape in the range.
+    front = poly(((18, 36), (76, 36), (72, 52), (76, 68), (18, 68), (22, 52)),
+                 (8, 8, 7, 8, 8, 7))
+    return [front, *extrude(front, 10)]
+
+
+def _bar(x: float, y: float, w: float, h: float, depth: float, radius: float) -> list[Path]:
+    return upright(x, y, w, h, depth, radius)
+
+
+def d_beam() -> list[Path]:
+    return _bar(10, 48, 74, 13, 12, 4)
+
+
+def d_arc() -> list[Path]:
+    return _bar(6, 50, 84, 11, 9, 3)
+
+
+def d_ray() -> list[Path]:
+    return _bar(18, 48, 60, 13, 11, 3)
+
+
+def d_playbar() -> list[Path]:
+    paths = _bar(9, 47, 78, 15, 13, 2.5)
+    paths.append(line(19, 50, 19, 59))  # the end caps either side of the grille
+    paths.append(line(77, 50, 77, 59))
+    return paths
+
+
+def d_playbase() -> list[Path]:
+    # A plinth for the television to stand on: flat, deep, flared to the floor.
+    return box(((14, 52), (80, 52), (83, 62), (11, 62)), 13, 2.5)
+
+
+def d_move() -> list[Path]:
+    return upright(32, 20, 32, 56, 13, 7, taper=2)
+
+
+def d_roam() -> list[Path]:
+    return upright(38, 26, 22, 46, 9, 5, taper=2)
+
+
+def d_sub() -> list[Path]:
+    paths = upright(20, 24, 52, 54, 12, 8)
+    paths.append(rrect(38, 38, 16, 26, 8))  # the slot straight through the middle
+    return paths
+
+
+def d_submini() -> list[Path]:
+    paths = cylinder(46, 22, 17, 7, 54)
+    paths.append(circle(46, 50, 9))
+    return paths
+
+
+def d_amp() -> list[Path]:
+    paths = upright(14, 44, 62, 22, 16, 3)
+    paths.append(circle(64, 55, 5.5))  # the volume dial
+    return paths
+
+
+def d_port() -> list[Path]:
+    paths = upright(20, 48, 50, 15, 15, 3)
+    paths.append(circle(60, 55.5, 3))
+    return paths
+
+
+def d_bookshelf() -> list[Path]:
+    return upright(24, 26, 44, 46, 12, 2)
+
+
+def d_lamp() -> list[Path]:
+    # A shade over a drum: the IKEA table lamp.
+    shade = poly(((36, 18), (60, 18), (68, 42), (28, 42)), 3)
+    base = cylinder(48, 42, 11, 4.5, 36)
+    return [shade, ellipse(48, 20, 12, 4.5), *base[1:]]
+
+
+def d_frame() -> list[Path]:
+    paths = box(((24, 20), (68, 20), (68, 78), (24, 78)), 6, 2)
+    paths.append(rrect(30, 26, 32, 46, 1.5))
+    return paths
+
 
 
 DEVICES = [
@@ -355,76 +343,62 @@ DEVICES = [
 
 
 # ----------------------------------------------------------------------
-# Fitting, flattening and model matching
+# Fitting and flattening
 # ----------------------------------------------------------------------
 BUILDERS = dict(DEVICES)
 ICON_NAMES = tuple(name for name, _ in DEVICES)
 FALLBACK = "generic"
 
 
-def _bezier(p0, p1, p2, p3, steps):
-    for i in range(1, steps + 1):
-        t = i / steps
-        u = 1 - t
-        yield (u * u * u * p0[0] + 3 * u * u * t * p1[0]
-               + 3 * u * t * t * p2[0] + t * t * t * p3[0],
-               u * u * u * p0[1] + 3 * u * u * t * p1[1]
-               + 3 * u * t * t * p2[1] + t * t * t * p3[1])
+#: How much of the grid a device fills, relative to the largest in its family.
+#: Icons are seen one at a time beside a room name, so drawing each to its real
+#: size would leave a Roam as a smudge - but flattening everything to the same
+#: span would make an Arc, a Beam and a Ray the same soundbar.  These are the
+#: real lengths, compressed hard, so the order survives and nothing shrinks far.
+RELATIVE = {
+    "arc": 1.00,      # 114 cm
+    "playbar": 0.93,  #  90 cm
+    "playbase": 0.87, #  72 cm
+    "beam": 0.85,     #  65 cm
+    "ray": 0.81,      #  56 cm
+    "five": 1.00,     #  36 cm across the front
+    "play3": 0.90,    #  27 cm
+    "sub": 1.00,
+    "submini": 0.86,  # two thirds of a Sub, and it should look it
+    "amp": 1.00,      #  22 cm across
+    "port": 0.84,     #  14 cm
+    "move": 1.00,     #  24 cm tall
+    "roam": 0.82,     #  17 cm, and it should not look like a Move
+}
 
 
 @cache
 def fitted(name: str) -> tuple[Path, ...]:
-    """Build a device and scale it to sit centred in the 32-unit grid.
-
-    The bounds come from the flattened curves rather than their control points,
-    so a cylinder ends up exactly as large as a box - measuring the hull would
-    leave every curved device a little short.
-    """
-    set_yaw(0)
-    parts = BUILDERS.get(name, BUILDERS[FALLBACK])()
-    pts = [p for run in _runs(parts) for p in run]
-    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
-    span = max(max(xs) - min(xs), max(ys) - min(ys))
-    scale = (VIEW - 2 * MARGIN) / span
+    """Build a device and scale it to sit centred in the 32-unit grid."""
+    runs = BUILDERS.get(name, BUILDERS[FALLBACK])()
+    xs = [x for run in runs for x, _ in run]
+    ys = [y for run in runs for _, y in run]
+    span = max(max(xs) - min(xs), max(ys) - min(ys), 1e-6)
+    scale = (VIEW - 2 * MARGIN) * RELATIVE.get(name, 1.0) / span
     cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    return tuple(
+        tuple((VIEW / 2 + (x - cx) * scale, VIEW / 2 + (y - cy) * scale) for x, y in run)
+        for run in runs
+    )
 
-    def place(p):
-        return (VIEW / 2 + (p[0] - cx) * scale, VIEW / 2 + (p[1] - cy) * scale)
 
-    for path in parts:
-        path.segs = [(kind, [place(p) for p in pts]) for kind, pts in path.segs]
-    return tuple(parts)
+@cache
+def polylines(name: str) -> tuple[Path, ...]:
+    """A device as plain point runs, for anything that cannot draw curves."""
+    return fitted(name)
 
 
 def svg_paths(name: str) -> list[str]:
     """The ``d`` attribute of every stroke in a device, ready for an SVG."""
-    return [path.render() for path in fitted(name)]
-
-
-def _runs(paths, steps: int = 8) -> list[tuple[tuple[float, float], ...]]:
-    """Flatten paths to plain point runs, sampling every curve into segments."""
-    runs = []
-    for path in paths:
-        run: list[tuple[float, float]] = []
-        start = None
-        for kind, pts in path.segs:
-            if kind == "M":
-                if len(run) > 1:
-                    runs.append(tuple(run))
-                start = pts[0]
-                run = [start]
-            elif kind == "L":
-                run.append(pts[0])
-            elif kind == "C":
-                run.extend(_bezier(run[-1], pts[0], pts[1], pts[2], steps))
-            elif kind == "Z" and start is not None:
-                run.append(start)
-        if len(run) > 1:
-            runs.append(tuple(run))
-    return runs
-
-
-@cache
-def polylines(name: str) -> tuple[tuple[tuple[float, float], ...], ...]:
-    """A device as plain point runs, for anything that cannot draw curves."""
-    return tuple(_runs(fitted(name)))
+    out = []
+    for run in fitted(name):
+        closed = len(run) > 2 and run[0] == run[-1]
+        points = run[:-1] if closed else run
+        drawn = " ".join(f"{x:.2f} {y:.2f}" for x, y in points)
+        out.append(f"M{drawn}" + ("Z" if closed else ""))
+    return out

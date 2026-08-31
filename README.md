@@ -95,8 +95,9 @@ is drawn as two speakers**, which makes a paired room obvious at a glance in a d
 | Symfonisk bookshelf, lamp, picture frame | anything else: a generic speaker |
 
 The model is read from the player's own description document, so nothing needs configuring.
-Each cabinet is described once by its real width, depth and height and flattened through one
-shared projection at start-up - there are no image files in the repository - then served as PNG
+Each cabinet is described once as the face you look at plus the depth it stands in, and folded
+back through one shared projection at start-up - there are no image files in the repository -
+then served as PNG
 at 48, 120, 240 and 512 pixels, and as SVG at `/dev/<uuid>/icon.svg` for control points and
 dashboards that would rather scale it. The bridge's own status page shows the same icons next to
 your rooms.

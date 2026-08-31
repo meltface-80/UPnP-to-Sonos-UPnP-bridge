@@ -1,11 +1,10 @@
 """Line drawings of the Sonos models the bridge can bridge.
 
 The shapes themselves come from :mod:`sonosbridge.deviceicons`, where each
-cabinet is described by its real size and drawn in three-quarter view, so a
-Five is recognisably a Five and not just a wide box.  This module scales those
-outlines into the 100x100 box the rest of the bridge works in, matches a
-reported model name to one of them, and lays two side by side for a room that
-is a bonded stereo pair.
+cabinet is drawn in three-quarter view, so a Five is recognisably a Five and
+not just a wide box.  This module scales those outlines into the 100x100 box
+the rest of the bridge works in, matches a reported model name to one of them,
+and lays two side by side for a room that is a bonded stereo pair.
 
 Both renderers work from the single description: :mod:`sonosbridge.icon`
 rasterises it into the PNG that UPnP control points ask for, and :func:`svg`
