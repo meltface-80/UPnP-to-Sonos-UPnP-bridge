@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="Sonos UPnP Bridge for Audirvana" \
       org.opencontainers.image.description="Presents Sonos players as standard UPnP/DLNA MediaRenderers" \
-      org.opencontainers.image.source="https://github.com/meltface-80/UPnP-to-Sonos-UPnP-bridge-for-Audirvana-" \
+      org.opencontainers.image.source="https://github.com/meltface-80/UPnP-to-Sonos-UPnP-bridge" \
       org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONUNBUFFERED=1 \

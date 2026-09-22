@@ -192,6 +192,11 @@ SOAP and GENA surface, and `sonosbridge/bridge.py` wires it together.
 The site under `docs/` is published with GitHub Pages: **Settings → Pages → Source: Deploy from a
 branch → `main` / `/docs`**.
 
-## License
+## Licence
 
-MIT — see [LICENSE](LICENSE). Not affiliated with Sonos, Inc. or Audirvana.
+Sonos UPnP Bridge is copyright (c) 2026 Lewis Menzies (Music Duck / MusicD) and
+is released under the MIT License — the full text is in [LICENSE](LICENSE). In
+short: do what you like with it, as long as the copyright notice and the licence
+travel with it. It comes with no warranty.
+
+Not affiliated with Sonos, Inc. or Audirvana.
